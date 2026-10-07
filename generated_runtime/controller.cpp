@@ -203,10 +203,6 @@ constexpr int IDC_COPY_CLICKS = 200;
 constexpr int IDC_CONSOLIDATE_TOGGLE = 205;
 constexpr int IDC_MAIN_TAB = 207;
 constexpr int IDC_COMPACT_TOGGLE = 209;
-constexpr int IDC_EXPORT_CLICK_CONFIG = 210;
-constexpr int IDC_IMPORT_CLICK_CONFIG = 211;
-constexpr int IDC_EXPORT_MAP_CONFIG = 212;
-constexpr int IDC_IMPORT_MAP_CONFIG = 213;
 constexpr int IDC_ENABLE_SHORTCUT = 214;
 constexpr int IDC_SHORTCUT_SETTINGS = 215;
 constexpr int IDC_SELECT_ALL_ACCOUNTS = 216;
@@ -1018,46 +1014,6 @@ bool ReadUtf8File(const std::wstring& path, std::wstring& text, std::wstring& er
     if (!bytes.empty() && text.empty()) { error = L"File không phải UTF-8 hợp lệ"; return false; }
     return true;
 }
-
-bool PickPortableConfigPath(HWND owner, bool save, std::wstring& path) {
-    wchar_t file[4096]{};
-    if (save) wcscpy_s(file, _countof(file), L"ThanLong-click-config.tlcfg");
-    const wchar_t filter[] = L"Thần Long click config (*.tlcfg)\0*.tlcfg\0Tất cả file (*.*)\0*.*\0\0";
-    OPENFILENAMEW ofn{};
-    ofn.lStructSize = sizeof(ofn); ofn.hwndOwner = owner; ofn.lpstrFilter = filter;
-    ofn.lpstrFile = file; ofn.nMaxFile = _countof(file); ofn.lpstrDefExt = L"tlcfg";
-    ofn.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | (save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
-    const BOOL ok = save ? GetSaveFileNameW(&ofn) : GetOpenFileNameW(&ofn);
-    if (!ok) return false;
-    path = file; return true;
-}
-
-bool PickMasterConfigPath(HWND owner, bool save, std::wstring& path) {
-    wchar_t file[4096]{};
-    if (save) wcscpy_s(file, _countof(file), L"ThanLong-all-coordinates.tlmaster");
-    const wchar_t filter[] = L"Thần Long ALL config (*.tlmaster)\0*.tlmaster\0Tất cả file (*.*)\0*.*\0\0";
-    OPENFILENAMEW ofn{};
-    ofn.lStructSize = sizeof(ofn); ofn.hwndOwner = owner; ofn.lpstrFilter = filter;
-    ofn.lpstrFile = file; ofn.nMaxFile = _countof(file); ofn.lpstrDefExt = L"tlmaster";
-    ofn.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | (save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
-    const BOOL ok = save ? GetSaveFileNameW(&ofn) : GetOpenFileNameW(&ofn);
-    if (!ok) return false;
-    path = file; return true;
-}
-
-bool PickMapConfigPath(HWND owner, bool save, std::wstring& path) {
-    wchar_t file[4096]{};
-    if (save) wcscpy_s(file, _countof(file), L"ThanLong-map-config.tlmap");
-    const wchar_t filter[] = L"Thần Long map config (*.tlmap)\0*.tlmap\0Tất cả file (*.*)\0*.*\0\0";
-    OPENFILENAMEW ofn{};
-    ofn.lStructSize = sizeof(ofn); ofn.hwndOwner = owner; ofn.lpstrFilter = filter;
-    ofn.lpstrFile = file; ofn.nMaxFile = _countof(file); ofn.lpstrDefExt = L"tlmap";
-    ofn.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | (save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
-    const BOOL ok = save ? GetSaveFileNameW(&ofn) : GetOpenFileNameW(&ofn);
-    if (!ok) return false;
-    path = file; return true;
-}
-
 
 TelegramSettings LoadTelegramSettings(std::wstring& warning) {
     TelegramSettings t{};
@@ -2664,8 +2620,6 @@ private:
         captureAlliancePkButton_ = Make(L"BUTTON", L"LM F8", BS_PUSHBUTTON, 228, 628, 95, 27, IDC_CAPTURE_ALLIANCE_PK); addFont(captureAlliancePkButton_);
         pkTlLmStatus_ = Make(L"STATIC", L"PK/TL/LM • tọa dùng chung • bật riêng từng acc", SS_LEFT | SS_CENTERIMAGE, 334, 628, 330, 27, 0); addFont(pkTlLmStatus_);
         // Dòng mô tả nội bộ MAIN/FIFO/batch được ẩn khỏi giao diện khách hàng.
-        addFont(Make(L"BUTTON", L"XUẤT TẤT CẢ", BS_PUSHBUTTON, 678, 628, 145, 27, IDC_EXPORT_CLICK_CONFIG));
-        addFont(Make(L"BUTTON", L"NHẬP TẤT CẢ", BS_PUSHBUTTON, 831, 628, 145, 27, IDC_IMPORT_CLICK_CONFIG));
         addFont(Make(L"BUTTON", L"QUẢN LÝ NHANH • BÃI TRAIN / TẬP TRUNG / PT", BS_GROUPBOX, 18, 662, 1005, 70, 0));
         addFont(Make(L"BUTTON", L"ÁP BÃI PT", BS_PUSHBUTTON, 32, 686, 100, 28, IDC_APPLY_SPOT_PARTY));
         addFont(Make(L"BUTTON", L"ÁP ALL CON", BS_PUSHBUTTON, 140, 686, 112, 28, IDC_APPLY_SPOT_ALL_CON));
@@ -5254,54 +5208,6 @@ private:
         return true;
     }
 
-    void ExportPortableMapConfig() {
-        std::wstring path;
-        if (!PickMapConfigPath(hwnd_, true, path)) return;
-        std::wstring text, error;
-        if (!BuildPortableMapConfig(text, error) || !WriteUtf8File(path, text, error)) {
-            MessageBoxW(hwnd_, error.c_str(), L"XUẤT MAP THẤT BẠI", MB_OK | MB_ICONERROR); return;
-        }
-        Log(L"XUẤT MAP PASS • " + std::to_wstring(spots_.size()) + L" bãi • " + path);
-        MessageBoxW(hwnd_, L"Đã xuất danh sách MAP/bãi train ra file .tlmap.", L"XUẤT MAP PASS", MB_OK | MB_ICONINFORMATION);
-    }
-
-    void ImportPortableMapConfig() {
-        std::wstring path;
-        if (!PickMapConfigPath(hwnd_, false, path)) return;
-        std::wstring text, error;
-        if (!ReadUtf8File(path, text, error)) {
-            MessageBoxW(hwnd_, error.c_str(), L"NHẬP MAP THẤT BẠI", MB_OK | MB_ICONERROR); return;
-        }
-        std::vector<TargetProfile> incoming;
-        if (!ParsePortableMapConfig(text, incoming, error)) {
-            MessageBoxW(hwnd_, error.c_str(), L"NHẬP MAP THẤT BẠI", MB_OK | MB_ICONERROR); return;
-        }
-        int added = 0, updated = 0;
-        for (const auto& spot : incoming) {
-            const int index = FindSpotIndex(spots_, spot.name);
-            if (index < 0) { spots_.push_back(spot); ++added; }
-            else {
-                TargetProfile& old = spots_[static_cast<std::size_t>(index)];
-                if (old.mapID != spot.mapID || old.x != spot.x || old.y != spot.y || !old.valid) {
-                    old = spot; ++updated;
-                }
-            }
-        }
-        SaveSharedSpots(spots_);
-        for (auto& account : accounts_) if (account) {
-            ResolveProfileTarget(account->profile);
-            SaveProfile(account->profile);
-        }
-        RefreshSpotCombo();
-        LoadSelectedProfileToUi();
-        Log(L"NHẬP MAP PASS • thêm " + std::to_wstring(added) + L" • cập nhật " + std::to_wstring(updated) +
-            L" • giữ nguyên MAP khác đang có");
-        MessageBoxW(hwnd_, (L"Nhập MAP xong.\nThêm: " + std::to_wstring(added) +
-                            L"\nCập nhật cùng tên: " + std::to_wstring(updated) +
-                            L"\nCác MAP khác đang có được giữ nguyên.").c_str(),
-                    L"NHẬP MAP PASS", MB_OK | MB_ICONINFORMATION);
-    }
-
     bool BuildPortableClickConfig(const Account& source, std::wstring& text, std::wstring& error) {
         text = L"TLCLICKCFG\t3\r\n";
         auto emitPoint = [&](const wchar_t* name, const ClickPoint& p) {
@@ -5388,27 +5294,6 @@ private:
         if(version==2 && (legacySellExpected<0 || legacySellExpected!=legacySellSeen)){error=L"SELL legacy COUNT không khớp";return false;}
         for(const auto& st:childSeq)if(st.target==1&&(st.mainRef<0||st.mainRef>=(int)mainSeq.size())){error=L"CHILD tham chiếu MAIN ngoài phạm vi";return false;}
         return true;
-    }
-
-    void ExportPortableClickConfig() {
-        Account* a=SelectedAccount(); if(!a){Log(L"XUẤT CFG: chọn một acc làm nguồn 3 điểm F8 trước.");return;}
-        EnsureSharedChildTradeSequence();std::wstring path;if(!PickPortableConfigPath(hwnd_,true,path))return;std::wstring text,error;
-        if(!BuildPortableClickConfig(*a,text,error)||!WriteUtf8File(path,text,error)){MessageBoxW(hwnd_,error.c_str(),L"XUẤT CFG THẤT BẠI",MB_OK|MB_ICONERROR);return;}
-        LogAccount(*a,L"XUẤT CFG v3 PASS • MAIN="+std::to_wstring(mainTradeSequence_.size())+L" • CON="+std::to_wstring(childTradeSequence_.size())+L" • 3 điểm F8 • không còn macro bán • "+path);
-        MessageBoxW(hwnd_,L"Đã xuất cấu hình click portable v3. Macro bán cũ không còn được xuất.",L"XUẤT CFG PASS",MB_OK|MB_ICONINFORMATION);
-    }
-
-    void ImportPortableClickConfig() {
-        Account* a=SelectedAccount();if(!a){Log(L"NHẬP CFG: chọn acc đích trước để nhận 3 điểm F8.");return;}
-        std::wstring path;if(!PickPortableConfigPath(hwnd_,false,path))return;std::wstring text,error;if(!ReadUtf8File(path,text,error)){MessageBoxW(hwnd_,error.c_str(),L"NHẬP CFG THẤT BẠI",MB_OK|MB_ICONERROR);return;}
-        std::array<ClickPoint,3> points{};std::vector<TradeSequenceStep> mainSeq,childSeq;
-        if(!ParsePortableClickConfig(text,points,mainSeq,childSeq,error)){MessageBoxW(hwnd_,error.c_str(),L"NHẬP CFG THẤT BẠI",MB_OK|MB_ICONERROR);return;}
-        const std::wstring confirm=L"File sẽ thay thế:\n• CHUỖI GD MAIN: "+std::to_wstring(mainSeq.size())+L" dòng\n• CHUỖI GD ACC CON: "+std::to_wstring(childSeq.size())+L" dòng\n• 3 điểm AUTO / ĐÁNH QUÁI / DỪNG AUTO\n\nNếu file v2 có SELL legacy, các dòng đó đã được validate nhưng BỎ QUA. Tiếp tục?";
-        if(MessageBoxW(hwnd_,confirm.c_str(),L"NHẬP CLICK CFG",MB_YESNO|MB_ICONQUESTION)!=IDYES)return;
-        mainTradeSequence_=std::move(mainSeq);childTradeSequence_=std::move(childSeq);NormalizeTradeGroups(childTradeSequence_);sharedChildTradeMigrationDone_=true;
-        a->profile.points[static_cast<std::size_t>(ClickSlot::AutoMenu)]=points[0];a->profile.points[static_cast<std::size_t>(ClickSlot::Attack)]=points[1];a->profile.points[static_cast<std::size_t>(ClickSlot::StopAuto2)]=points[2];
-        SaveMainTradeSequence();SaveSharedChildTradeSequence();SaveProfile(a->profile);LoadSelectedProfileToUi();RefreshTradeSequenceList();PopulateTradeTargetCombo();
-        LogAccount(*a,L"NHẬP CFG PASS • MAIN="+std::to_wstring(mainTradeSequence_.size())+L" • CON="+std::to_wstring(childTradeSequence_.size())+L" • 3 điểm F8 • SELL legacy không được nạp");
     }
 
     struct PortableCoordRow { ClickPoint point{}; int delayMs=0; };
@@ -5634,7 +5519,7 @@ private:
                 if(!header) {
                     if(f.size()!=2||f[0]!=L"TLMASTERCFG"||!ParsePortableInt(f[1],masterVersion)||
                        (masterVersion!=1&&masterVersion!=2&&masterVersion!=3)) {
-                        error=L"Sai định dạng/version file ALL (.tlmaster)"; return false;
+                        error=L"Sai định dạng/version file ALL"; return false;
                     }
                     header=true;
                 } else if(f[0]==L"MAP_BLOB") {
@@ -5723,26 +5608,6 @@ private:
         if(!ParsePortableClickConfig(clickBlob,out.points,out.mainSeq,out.childSeq,error)) { error=L"CLICK_BLOB: "+error; return false; }
         if(out.childSeq.empty()) {error=L"CHUỖI GD CON phải có ít nhất 1 bước autoclick";return false;}
         return true;
-    }
-
-    void ExportPortableMasterConfig() {
-        Account* a=SelectedAccount();if(!a){Log(L"XUẤT TẤT CẢ: chọn 1 acc nguồn cho các tọa theo acc.");return;}
-        std::wstring path;if(!PickMasterConfigPath(hwnd_,true,path))return;std::wstring text,error;
-        if(!BuildPortableCoordinateConfig(*a,text,error)||!WriteUtf8File(path,text,error)){MessageBoxW(hwnd_,error.c_str(),L"XUẤT TẤT CẢ THẤT BẠI",MB_OK|MB_ICONERROR);return;}
-        LogAccount(*a,L"XUẤT TẤT CẢ PASS • CHỈ TỌA + Time/Delay trực tiếp • KHÔNG BÃI TRAIN • "+path);
-        MessageBoxW(hwnd_,L"Đã xuất TẤT CẢ TỌA ĐỘ + Time/Delay trực tiếp. Không xuất bãi train tự lưu và không xuất setting thừa.",L"XUẤT TẤT CẢ PASS",MB_OK|MB_ICONINFORMATION);
-    }
-
-    void ImportPortableMasterConfig() {
-        Account* a=SelectedAccount();if(!a){Log(L"NHẬP TẤT CẢ: chọn 1 acc đích cho các tọa theo acc.");return;}
-        std::wstring path;if(!PickMasterConfigPath(hwnd_,false,path))return;std::wstring text,error;if(!ReadUtf8File(path,text,error)){MessageBoxW(hwnd_,error.c_str(),L"NHẬP TẤT CẢ THẤT BẠI",MB_OK|MB_ICONERROR);return;}
-        PortableCoordinateData incoming{};if(!ParsePortableCoordinateConfig(text,incoming,error)){MessageBoxW(hwnd_,error.c_str(),L"NHẬP TẤT CẢ THẤT BẠI",MB_OK|MB_ICONERROR);return;}
-        EnsureSharedChildTradeSequence();if(incoming.mainTrade.size()!=mainTradeSequence_.size()||incoming.childTrade.size()!=childTradeSequence_.size()){MessageBoxW(hwnd_,L"Số dòng CHUỖI GD trên PC này khác file backup. Không thay cấu trúc/Repeat/Group/AfterAction; chỉ nhập tọa + Time/Delay.",L"NHẬP TẤT CẢ THẤT BẠI",MB_OK|MB_ICONERROR);return;}
-        const std::wstring confirm=L"File đã validate. Chỉ nhập TỌA ĐỘ + Time/Delay trực tiếp.\n\nKHÔNG nhập bãi train tự lưu.\nKHÔNG đổi ON/OFF, Repeat, Group, AfterAction, Telegram, role, key hay setting khác.\n\nTiếp tục?";
-        if(MessageBoxW(hwnd_,confirm.c_str(),L"NHẬP TẤT CẢ TỌA ĐỘ",MB_YESNO|MB_ICONQUESTION)!=IDYES)return;
-        if(!ApplyPortableCoordinateConfig(*a,incoming,error)){MessageBoxW(hwnd_,error.c_str(),L"NHẬP TẤT CẢ THẤT BẠI",MB_OK|MB_ICONERROR);return;}
-        LogAccount(*a,L"NHẬP TẤT CẢ PASS • chỉ tọa + Time/Delay • bãi train/setting khác giữ nguyên.");
-        MessageBoxW(hwnd_,L"NHẬP TẤT CẢ PASS. Tọa độ đã được khôi phục; bãi train và mọi setting không liên quan giữ nguyên.",L"NHẬP TẤT CẢ PASS",MB_OK|MB_ICONINFORMATION);
     }
 
     void LoadTradeSettings() {
@@ -12252,12 +12117,6 @@ private:
                         break;
                     case IDC_COMPACT_TOGGLE:
                         if (HIWORD(wp) == BN_CLICKED) ToggleCompactMode();
-                        break;
-                    case IDC_EXPORT_CLICK_CONFIG:
-                        if (HIWORD(wp) == BN_CLICKED) ExportPortableMasterConfig();
-                        break;
-                    case IDC_IMPORT_CLICK_CONFIG:
-                        if (HIWORD(wp) == BN_CLICKED) ImportPortableMasterConfig();
                         break;
                     case IDC_SELL_SEQUENCE:
                         ToggleMainSellSettings();
