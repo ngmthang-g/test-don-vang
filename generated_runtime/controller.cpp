@@ -115,7 +115,7 @@ constexpr DWORD kAutoPathFightConflictRetryMs = 1000;
 constexpr DWORD kRouteOwnershipStopRetryMs = 1200;
 constexpr int kRouteOwnershipStopMaxAttempts = 3;
 constexpr DWORD kTradeBagStableMs = 1000;      // v9.9: require 1s stable MAIN bag snapshot before deciding the completed pass.
-constexpr DWORD kTradeBagVerifyMaxMs = 2000;    // v9.9: bounded fail-closed window; gap click stays blocked until post-pass is decided.
+constexpr DWORD kTradeBagVerifyMaxMs = 2000;    // v9.9: bounded fail-closed window until post-pass is decided.
 constexpr DWORD kTradeTargetTimeoutMs = 4500;
 constexpr DWORD kTradeTargetRetryMs = 500;
 constexpr int kPreciseWorldTolerance = 20; // v1.6: GD/NPC gần như tuyệt đối; train vẫn dùng profile tolerance.
@@ -7612,22 +7612,6 @@ private:
         if(!EnsureMainCapacityPlan(main)){main.runtime.status=L"MAIN QUOTA • chờ FreeBag hợp lệ để lập epoch";return true;}
         if(mainCapacityPlan_.passesRemaining>0)return false;
         (void)BeginMainMacroSell(main,false);return true;
-    }
-    // CP17 retains the unrelated MAIN post-pass gap-click helpers.
-    // They are not the removed legacy sell macro; trade flow/timer still call them.
-    bool MainIdlePointClick(Account& main, const ClickPoint& point, std::wstring& error) {
-        if (RecorderBlocksAccount(main)) { error = L"MAIN đang REC cấu hình"; return false; }
-        if (main.runtime.clientFreezeActive || !IsWindow(main.game.window)) { error = L"MAIN đang FREEZE hoặc cửa sổ đã mất"; return false; }
-        int normalizedX = -1, normalizedY = -1;
-        if (!NormalizeClickPointForBridge(main.game, point, normalizedX, normalizedY, error)) return false;
-        std::wstring attachError;
-        if (!EnsureAttach(main, attachError)) { error = L"Không attach được MAIN: " + attachError; return false; }
-        Response response{};
-        if (!main.bridge.Call(Command::ClickInternalPoint, normalizedX, normalizedY, 0, response, error, 2200)) {
-            if (BridgeLooksUnresponsive(error)) EnterClientFreeze(main, L"Bridge timeout khi MAIN Click khi không giao dịch", GetTickCount());
-            return false;
-        }
-        return true;
     }
     void ReportSellBlockOnce(Account& main, int code, const std::wstring& detail) {
         if (main.runtime.sellBlockReportCode == code) return;
