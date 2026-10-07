@@ -2175,28 +2175,6 @@ bool FindUiByName(const char* uiName, Il2CppObject*& ui, wchar_t* detail, std::s
     return false;
 }
 
-// TEST-ONLY BAG PROBE --------------------------------------------------------
-// Read-only verification only. Opening the bag is intentionally NOT exposed
-// through a semantic call; production uses the user-assigned raw F8 click.
-bool TestOpenBagSemantic(bool verifyOnly, Response& response,
-                         wchar_t* detail, std::size_t cap) {
-    (void)verifyOnly;
-    if (!EnsureUiLua(true, detail, cap)) return false;
-
-    Il2CppObject* bagUi = nullptr;
-    wchar_t findDetail[192]{};
-    if (FindUiByName("RoleInfo_BagTab", bagUi, findDetail, _countof(findDetail)) && bagUi) {
-        response.resultCode = static_cast<std::int32_t>(ActionResult::StageReady);
-        response.value0 = 1;
-        SetText(detail, cap, L"TEST BAG PROBE PASS • RoleInfo_BagTab đang tồn tại");
-        return true;
-    }
-    response.value0 = 0;
-    SetText(detail, cap, L"TEST BAG PROBE • chưa thấy RoleInfo_BagTab");
-    return true;
-}
-// END TEST-ONLY BAG PROBE ----------------------------------------------------
-
 bool InvokeLuaAction(const char* uiName, const char* functionName,
                      wchar_t* detail, std::size_t cap) {
     if (!EnsureUiLua(true, detail, cap)) return false;
@@ -3252,8 +3230,6 @@ void ProcessRequest() {
                 ok = ClickTravelSemantic(static_cast<TravelSemantic>(g_shared->request.arg0), g_shared->request.arg1 != 0, r, detail, _countof(detail)); break;
             case Command::ConfirmTravelSemantic:
                 ok = ConfirmTravelSemantic(r, detail, _countof(detail)); break;
-            case Command::TestOpenBag:
-                ok = TestOpenBagSemantic(g_shared->request.arg0 != 0, r, detail, _countof(detail)); break;
             case Command::ProbeNearbyLoot:
                 ok = ProbeNearbyLoot(r, detail, _countof(detail)); break;
             case Command::PickNearestLoot:
