@@ -46,6 +46,7 @@
 #include "auto_loot_logic.h"
 #include "pk_tl_lm_logic.h"
 #include "travel_network_logic.h"
+#include "auto_role_logic.h"
 
 using namespace cleanroute;
 using namespace cleanroute_logic;
@@ -147,6 +148,7 @@ constexpr int kMainTradeRole = 1;
 constexpr int kFirstChildTradeRole = 2;
 constexpr int kChildTradeCount = 30;
 constexpr int kLastChildTradeRole = kFirstChildTradeRole + kChildTradeCount - 1;
+constexpr int kOverflowChildTradeRole = kLastChildTradeRole + 1; // CON beyond scheduler capacity.
 
 
 
@@ -691,7 +693,8 @@ struct TelegramAccountWatch {
 
 struct AccountProfile {
     std::wstring section;
-    // 0=NONE, 1=MAIN, 2..31=CON1..CON30. Persisted by RoleID profile.
+    // Runtime-only role: 1=MAIN, 2..31=CON1..CON30, 32=CON overflow.
+    // CON numbering is regenerated on every scan and is never persisted.
     int tradeRole = 0;
     // Chỉ là nhãn UI để gom/nhìn/chọn nhanh; tuyệt đối không tham gia workflow NORMAL.
     int displayParty = 0;
@@ -1464,8 +1467,8 @@ void SaveSharedPkTlLmSettings(const SharedPkTlLmSettings& settings) {
 AccountProfile LoadProfile(const std::wstring& section) {
     AccountProfile p{};
     p.section = section;
-    p.tradeRole = ReadIniInt(section, L"TradeRole", 0);
-    if (p.tradeRole < 0 || p.tradeRole > kLastChildTradeRole) p.tradeRole = 0;
+    // TradeRole is intentionally not loaded: MAIN identity is global; CON slots are runtime-only.
+    p.tradeRole = 0;
     p.displayParty = std::clamp(ReadIniInt(section, L"DisplayParty", 0), 0, kChildTradeCount);
     p.partyKey = ReadIniInt(section, L"PartyKey", 0) != 0;
     if (p.tradeRole == kMainTradeRole) { p.displayParty = 0; p.partyKey = false; }
@@ -1524,7 +1527,6 @@ AccountProfile LoadProfile(const std::wstring& section) {
 
 void SaveProfile(const AccountProfile& p) {
     EnsureUnicodeIni();
-    WriteIniInt(p.section, L"TradeRole", p.tradeRole);
     WriteIniInt(p.section, L"DisplayParty", p.displayParty);
     WriteIniInt(p.section, L"PartyKey", p.partyKey && p.tradeRole != kMainTradeRole && p.displayParty > 0 ? 1 : 0);
     WriteIniInt(p.section, L"Tolerance", p.tolerance);
@@ -2057,7 +2059,8 @@ std::wstring TradeRoleLabel(int role) {
     if (role == kMainTradeRole) return L"MAIN";
     if (role >= kFirstChildTradeRole && role <= kLastChildTradeRole)
         return L"CON " + std::to_wstring(role - 1);
-    return L"-";
+    if (role == kOverflowChildTradeRole) return L"CON >30";
+    return L"CON AUTO";
 }
 
 std::wstring PointDescription(const ClickPoint& p) {
@@ -2643,13 +2646,9 @@ private:
         startCheckedButton_ = Make(L"BUTTON", L"BẮT ĐẦU ACC TICK", BS_DEFPUSHBUTTON, 148, 294, 175, 30, IDC_START_CHECKED); addFont(startCheckedButton_);
         stopCheckedButton_ = Make(L"BUTTON", L"DỪNG ACC TICK", BS_PUSHBUTTON, 333, 294, 155, 30, IDC_STOP_CHECKED); addFont(stopCheckedButton_);
         addFont(Make(L"STATIC", L"Vai trò:", SS_LEFT | SS_CENTERIMAGE, 500, 294, 55, 30, 0));
-        tradeRoleCombo_ = Make(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_VSCROLL, 558, 294, 105, 500, IDC_TRADE_ROLE); addFont(tradeRoleCombo_);
-        for (const wchar_t* r : {L"KHÔNG", L"MAIN"})
+        tradeRoleCombo_ = Make(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_VSCROLL, 558, 294, 105, 90, IDC_TRADE_ROLE); addFont(tradeRoleCombo_);
+        for (const wchar_t* r : {L"CON AUTO", L"MAIN"})
             SendMessageW(tradeRoleCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(r));
-        for (int child = 1; child <= kChildTradeCount; ++child) {
-            const std::wstring role = L"CON " + std::to_wstring(child);
-            SendMessageW(tradeRoleCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(role.c_str()));
-        }
         selected_ = Make(L"STATIC", L"ACC ĐANG CHỈNH: chưa chọn", SS_LEFT | SS_CENTERIMAGE | WS_BORDER,
                          675, 294, 348, 30, IDC_SELECTED); addFont(selected_);
 
@@ -3915,6 +3914,63 @@ private:
         FlushIni();
     }
 
+    void NormalizeAutomaticTradeRoles(const std::wstring& requestedMainIdentity) {
+        std::vector<auto_role_logic::ClientKey> keys;
+        keys.reserve(accounts_.size());
+        std::wstring upgradedMainIdentity;
+        int identityMatches = 0;
+        for (const auto& item : accounts_) {
+            if (!item) { keys.push_back({}); continue; }
+            const Account& account = *item;
+            const bool hasRoleId = account.snapshotValid &&
+                (account.snapshot.validMask & ValidIdentity) && account.snapshot.roleID > 0;
+            const std::wstring stable = ProfileSection(account.snapshot, account.game.pid);
+            const std::wstring pidFallback = PidProfileSection(account.game.pid);
+            const bool isMain = !requestedMainIdentity.empty() &&
+                (requestedMainIdentity == stable || requestedMainIdentity == pidFallback);
+            if (isMain) {
+                ++identityMatches;
+                if (hasRoleId && requestedMainIdentity != stable) upgradedMainIdentity = stable;
+            }
+            keys.push_back({hasRoleId ? static_cast<std::uint64_t>(account.snapshot.roleID) : 0u,
+                            static_cast<std::uint32_t>(account.game.pid), hasRoleId, isMain});
+        }
+        if (identityMatches == 1 && !upgradedMainIdentity.empty())
+            SaveDesignatedMainIdentity(upgradedMainIdentity);
+
+        const std::vector<int> roles = auto_role_logic::AssignRuntimeRoles(
+            keys, kMainTradeRole, kFirstChildTradeRole, kChildTradeCount);
+        int overflow = 0;
+        bool hasMain = false;
+        for (std::size_t i = 0; i < accounts_.size(); ++i) {
+            if (!accounts_[i]) continue;
+            Account& account = *accounts_[i];
+            const int oldRole = account.profile.tradeRole;
+            const bool oldSell = account.profile.enableSell;
+            account.profile.tradeRole = roles[i];
+            account.tradeHeld = false;
+            if (account.profile.tradeRole == kMainTradeRole) {
+                hasMain = true;
+                account.profile.displayParty = 0;
+                account.profile.partyKey = false;
+                account.profile.enableSell = true;
+            } else {
+                account.profile.enableSell = false;
+                account.runtime.sellPhase = 0;
+                if (account.profile.tradeRole == kOverflowChildTradeRole) ++overflow;
+            }
+            if (oldRole != account.profile.tradeRole || oldSell != account.profile.enableSell)
+                SaveProfile(account.profile);
+        }
+        if (!hasMain)
+            Log(L"CHƯA CÓ MAIN online/chỉ định • không tự promote • workflow giao dịch bị chặn.");
+        if (identityMatches > 1)
+            Log(L"CẢNH BÁO MAIN: identity trùng nhiều client; chặn MAIN để fail-safe.");
+        if (overflow > 0)
+            Log(L"CẢNH BÁO: vượt 30 CON; " + std::to_wstring(overflow) +
+                L" client dư vẫn là CON nhưng không được cấp child slot.");
+    }
+
     static std::wstring DisplayName(const Snapshot& s, DWORD pid) {
         std::wstring name = s.characterName[0] ? s.characterName : L"?";
         if ((s.validMask & ValidIdentity) && s.roleID > 0) {
@@ -3967,28 +4023,27 @@ private:
                 a->displayName = DisplayName(a->snapshot, game.pid);
             }
             a->profile = LoadProfile(ProfileSection(a->snapshot, game.pid));
-            if (a->profile.tradeRole >= 2) a->profile.enableSell = false;
             MigrateLegacySpot(a->profile);
             a->runtime.status = L"Đã dừng";
             accounts_.push_back(std::move(a));
         }
 
-        // T03: establish the stable MAIN identity without changing the current
-        // manual role/runtime behavior yet. T04 will consume this identity when
-        // automatic CON numbering is introduced.
-        if (LoadDesignatedMainIdentity().empty()) {
+        std::wstring designatedMainIdentity = LoadDesignatedMainIdentity();
+        if (designatedMainIdentity.empty()) {
             std::vector<std::wstring> legacyMainCandidates;
             for (const auto& item : accounts_) {
-                if (item && item->profile.tradeRole == kMainTradeRole)
+                if (item && ReadIniInt(item->profile.section, L"TradeRole", 0) == kMainTradeRole)
                     legacyMainCandidates.push_back(item->profile.section);
             }
             if (legacyMainCandidates.size() == 1) {
-                SaveDesignatedMainIdentity(legacyMainCandidates.front());
+                designatedMainIdentity = legacyMainCandidates.front();
+                SaveDesignatedMainIdentity(designatedMainIdentity);
                 Log(L"MIGRATE MAIN: chuyển TradeRole=MAIN cũ sang Global/MainIdentity.");
             } else if (legacyMainCandidates.size() > 1) {
                 Log(L"MIGRATE MAIN: phát hiện nhiều MAIN cũ; không tự chọn bừa.");
             }
         }
+        NormalizeAutomaticTradeRoles(designatedMainIdentity);
 
         for (std::size_t i = 0; i < accounts_.size(); ++i) InsertAccountRow(static_cast<int>(i), *accounts_[i]);
         RefreshAccountGroups();
@@ -7121,62 +7176,30 @@ private:
         Account* selected = SelectedAccount();
         if (!selected || !tradeRoleCombo_) return;
         const LRESULT sel = SendMessageW(tradeRoleCombo_, CB_GETCURSEL, 0, 0);
-        if (sel == CB_ERR || sel < 0 || sel > kLastChildTradeRole) return;
-        const int newRole = static_cast<int>(sel);
-        const int oldRole = selected->profile.tradeRole;
-        if (oldRole == 0 && newRole != 0 && selected->runtime.sellPhase >= 4) {
-            Response closeResponse{}; std::wstring closeError;
-            if (selected->bridge.Attached())
-                (void)selected->bridge.Call(Command::CloseBackgroundSell, 0, 0, 0, closeResponse, closeError, 700);
-            selected->runtime.sellPhase = 0;
-        }
-        if (newRole != 0) {
-            for (auto& item : accounts_) {
-                Account& other = *item;
-                if (&other == selected) continue;
-                if (other.profile.tradeRole == newRole) {
-                    other.profile.tradeRole = 0;
-                    other.tradeHeld = false;
-                    SaveProfile(other.profile);
-                    LogAccount(other, L"Vai trò " + TradeRoleLabel(newRole) + L" được chuyển sang acc khác → trả về KHÔNG.");
-                }
-            }
-        }
-        selected->profile.tradeRole = newRole;
+        if (sel == CB_ERR || sel < 0 || sel > 1) return;
 
-        // Persist only the designated MAIN identity globally. Keep legacy
-        // TradeRole persistence untouched in T03 so this commit does not yet
-        // change manual CON assignment/runtime behavior.
+        std::wstring mainIdentity = LoadDesignatedMainIdentity();
         const std::wstring selectedIdentity = ProfileSection(selected->snapshot, selected->game.pid);
-        const std::wstring designatedMainIdentity = LoadDesignatedMainIdentity();
-        if (newRole == kMainTradeRole) {
-            SaveDesignatedMainIdentity(selectedIdentity);
-        } else if (oldRole == kMainTradeRole &&
-                   (designatedMainIdentity == selectedIdentity ||
-                    designatedMainIdentity == selected->profile.section ||
-                    designatedMainIdentity == PidProfileSection(selected->game.pid))) {
-            SaveDesignatedMainIdentity(L"");
+        if (sel == 1) {
+            mainIdentity = selectedIdentity;
+            SaveDesignatedMainIdentity(mainIdentity);
+        } else if (selected->profile.tradeRole == kMainTradeRole ||
+                   mainIdentity == selectedIdentity || mainIdentity == PidProfileSection(selected->game.pid)) {
+            mainIdentity.clear();
+            SaveDesignatedMainIdentity(mainIdentity);
         }
 
-        if (newRole == 0) {
-            // NONE must never keep a CON workflow slot/ticket after a role change.
-            ReleaseWorkflowChild(*selected);
-        }
-        if (newRole == 1) {
-            selected->profile.displayParty = 0;
-            selected->profile.enableSell = true; // MAIN must sell immediately at/below threshold.
-            if (enableSell_) SendMessageW(enableSell_, BM_SETCHECK, BST_CHECKED, 0);
-        }
-        if (newRole >= 2) {
-            selected->profile.enableSell = false; // hard rule: child never sells.
-            selected->runtime.sellPhase = 0;
-            if (enableSell_) SendMessageW(enableSell_, BM_SETCHECK, BST_UNCHECKED, 0);
-        }
-        SaveProfile(selected->profile);
-        for (std::size_t i = 0; i < accounts_.size(); ++i) UpdateAccountRow(static_cast<int>(i), *accounts_[i]);
+        ReleaseTradeHolds();
+        ResetTradeTxn();
+        NormalizeAutomaticTradeRoles(mainIdentity);
+        for (std::size_t i = 0; i < accounts_.size(); ++i)
+            UpdateAccountRow(static_cast<int>(i), *accounts_[i]);
         RefreshAccountGroups();
         LoadSelectedProfileToUi();
-        LogAccount(*selected, L"Đặt vai trò giao dịch = " + TradeRoleLabel(newRole));
+        if (mainIdentity.empty())
+            Log(L"MAIN đã bỏ chỉ định; mọi client online là CON AUTO và trade bị chặn.");
+        else
+            Log(L"MAIN đã chỉ định theo identity; mọi client khác tự đánh CON1..CONN.");
     }
 
     Account* AccountByTradeRole(int role) {
@@ -8823,7 +8846,8 @@ private:
         if (!a) { ClearEditor(); return; }
         ResolveProfileTarget(a->profile);
         SetText(selected_, L"ACC ĐANG CHỈNH: " + AccountTag(*a));
-        if (tradeRoleCombo_) SendMessageW(tradeRoleCombo_, CB_SETCURSEL, a->profile.tradeRole, 0);
+        if (tradeRoleCombo_) SendMessageW(tradeRoleCombo_, CB_SETCURSEL,
+                                           a->profile.tradeRole == kMainTradeRole ? 1 : 0, 0);
         RefreshSpotCombo();
         SetText(targetName_, a->profile.selectedSpot);
         SetText(tolerance_, std::to_wstring(a->profile.tolerance));
@@ -12149,9 +12173,10 @@ private:
         const std::wstring oldSection = a.profile.section;
         const std::wstring newSection = ProfileSection(a.snapshot, a.game.pid);
         if (oldSection == newSection) return;
-        // PID fallback is only temporary. Once RoleID is proven, switch to the persistent role profile.
+        const int runtimeRole = a.profile.tradeRole;
+        const bool runtimeSell = a.profile.enableSell;
         AccountProfile persistent = LoadProfile(newSection);
-        const bool persistentHasData = persistent.tradeRole != 0 || persistent.displayParty != 0 ||
+        const bool persistentHasData = persistent.displayParty != 0 ||
             !persistent.selectedSpot.empty() || persistent.target.valid || persistent.enableSell ||
             persistent.enableTrainPk || persistent.enableTreatment || persistent.enableAlliancePk ||
             std::any_of(persistent.points.begin(), persistent.points.end(), [](const ClickPoint& p){ return p.valid; });
@@ -12159,9 +12184,6 @@ private:
             persistent = a.profile;
             persistent.section = newSection;
         } else {
-            // Merge data captured while identity was temporarily PID-based. The old
-            // all-or-nothing switch could make newly captured clicks/macro appear lost.
-            if (persistent.tradeRole == 0 && a.profile.tradeRole != 0) persistent.tradeRole = a.profile.tradeRole;
             if (persistent.displayParty == 0 && a.profile.displayParty != 0) persistent.displayParty = a.profile.displayParty;
             if (persistent.selectedSpot.empty() && !a.profile.selectedSpot.empty()) persistent.selectedSpot = a.profile.selectedSpot;
             if (!persistent.target.valid && a.profile.target.valid) persistent.target = a.profile.target;
@@ -12173,19 +12195,15 @@ private:
             }
         }
         persistent.section = newSection;
+        persistent.tradeRole = runtimeRole;
+        persistent.enableSell = runtimeRole == kMainTradeRole ? runtimeSell : false;
+        if (runtimeRole == kMainTradeRole) { persistent.displayParty = 0; persistent.partyKey = false; }
         SaveProfile(persistent);
         a.profile = persistent;
-        if (a.profile.tradeRole >= 2) a.profile.enableSell = false;
-
-        // Upgrade a temporary PID-based MAIN designation to RoleID as soon as
-        // identity becomes available. This only changes the global identity key.
-        const std::wstring designatedMainIdentity = LoadDesignatedMainIdentity();
-        if (a.profile.tradeRole == kMainTradeRole &&
-            (designatedMainIdentity == oldSection ||
-             designatedMainIdentity == PidProfileSection(a.game.pid))) {
+        const std::wstring designated = LoadDesignatedMainIdentity();
+        if (runtimeRole == kMainTradeRole &&
+            (designated == oldSection || designated == PidProfileSection(a.game.pid)))
             SaveDesignatedMainIdentity(newSection);
-        }
-
         MigrateLegacySpot(a.profile);
         a.displayName = DisplayName(a.snapshot, a.game.pid);
     }
