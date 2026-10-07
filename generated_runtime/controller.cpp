@@ -3901,6 +3901,20 @@ private:
         return L"PID_" + std::to_wstring(pid);
     }
 
+    static std::wstring PidProfileSection(DWORD pid) {
+        return L"PID_" + std::to_wstring(pid);
+    }
+
+    static std::wstring LoadDesignatedMainIdentity() {
+        return ReadIniText(L"Global", L"MainIdentity");
+    }
+
+    static void SaveDesignatedMainIdentity(const std::wstring& identity) {
+        EnsureUnicodeIni();
+        WriteIniText(L"Global", L"MainIdentity", identity);
+        FlushIni();
+    }
+
     static std::wstring DisplayName(const Snapshot& s, DWORD pid) {
         std::wstring name = s.characterName[0] ? s.characterName : L"?";
         if ((s.validMask & ValidIdentity) && s.roleID > 0) {
@@ -3957,6 +3971,23 @@ private:
             MigrateLegacySpot(a->profile);
             a->runtime.status = L"Đã dừng";
             accounts_.push_back(std::move(a));
+        }
+
+        // T03: establish the stable MAIN identity without changing the current
+        // manual role/runtime behavior yet. T04 will consume this identity when
+        // automatic CON numbering is introduced.
+        if (LoadDesignatedMainIdentity().empty()) {
+            std::vector<std::wstring> legacyMainCandidates;
+            for (const auto& item : accounts_) {
+                if (item && item->profile.tradeRole == kMainTradeRole)
+                    legacyMainCandidates.push_back(item->profile.section);
+            }
+            if (legacyMainCandidates.size() == 1) {
+                SaveDesignatedMainIdentity(legacyMainCandidates.front());
+                Log(L"MIGRATE MAIN: chuyển TradeRole=MAIN cũ sang Global/MainIdentity.");
+            } else if (legacyMainCandidates.size() > 1) {
+                Log(L"MIGRATE MAIN: phát hiện nhiều MAIN cũ; không tự chọn bừa.");
+            }
         }
 
         for (std::size_t i = 0; i < accounts_.size(); ++i) InsertAccountRow(static_cast<int>(i), *accounts_[i]);
@@ -7112,6 +7143,21 @@ private:
             }
         }
         selected->profile.tradeRole = newRole;
+
+        // Persist only the designated MAIN identity globally. Keep legacy
+        // TradeRole persistence untouched in T03 so this commit does not yet
+        // change manual CON assignment/runtime behavior.
+        const std::wstring selectedIdentity = ProfileSection(selected->snapshot, selected->game.pid);
+        const std::wstring designatedMainIdentity = LoadDesignatedMainIdentity();
+        if (newRole == kMainTradeRole) {
+            SaveDesignatedMainIdentity(selectedIdentity);
+        } else if (oldRole == kMainTradeRole &&
+                   (designatedMainIdentity == selectedIdentity ||
+                    designatedMainIdentity == selected->profile.section ||
+                    designatedMainIdentity == PidProfileSection(selected->game.pid))) {
+            SaveDesignatedMainIdentity(L"");
+        }
+
         if (newRole == 0) {
             // NONE must never keep a CON workflow slot/ticket after a role change.
             ReleaseWorkflowChild(*selected);
@@ -12100,8 +12146,9 @@ private:
 
     void RefreshAccountIdentityIfNeeded(Account& a) {
         if (!a.snapshotValid) return;
+        const std::wstring oldSection = a.profile.section;
         const std::wstring newSection = ProfileSection(a.snapshot, a.game.pid);
-        if (a.profile.section == newSection) return;
+        if (oldSection == newSection) return;
         // PID fallback is only temporary. Once RoleID is proven, switch to the persistent role profile.
         AccountProfile persistent = LoadProfile(newSection);
         const bool persistentHasData = persistent.tradeRole != 0 || persistent.displayParty != 0 ||
@@ -12129,6 +12176,16 @@ private:
         SaveProfile(persistent);
         a.profile = persistent;
         if (a.profile.tradeRole >= 2) a.profile.enableSell = false;
+
+        // Upgrade a temporary PID-based MAIN designation to RoleID as soon as
+        // identity becomes available. This only changes the global identity key.
+        const std::wstring designatedMainIdentity = LoadDesignatedMainIdentity();
+        if (a.profile.tradeRole == kMainTradeRole &&
+            (designatedMainIdentity == oldSection ||
+             designatedMainIdentity == PidProfileSection(a.game.pid))) {
+            SaveDesignatedMainIdentity(newSection);
+        }
+
         MigrateLegacySpot(a.profile);
         a.displayName = DisplayName(a.snapshot, a.game.pid);
     }
