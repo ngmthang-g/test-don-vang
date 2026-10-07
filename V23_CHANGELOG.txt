@@ -1,0 +1,23 @@
+SOURCE V23 UI DIRECT - UPDATE
+
+Base contract:
+- Sole source base: SOURCE_SACH_V23_DISCARD_CONFIRM.
+- Test-UI DIRECT code is used only as the verified selector/callback implementation source.
+
+Implemented:
+1. Weapon filter
+   - Removed OPEN1 / OPEN2 runtime/config/UI.
+   - Removed coordinate CloseBag runtime/config/UI.
+   - PRECHECK probes UI DIRECT MỞ TAY NẢI; if absent it performs the existing precheck coordinate once and retries state-driven.
+   - End cleanup: X popup item if present, then X Tay nải if present.
+2. Trade
+   - Added reorderable UI DIRECT actions: Xác nhận giao dịch, Tab Trang bị, Khóa, Giao dịch, Hủy bỏ yêu cầu giao dịch.
+   - Per-row MIN time defaults to 0 ms.
+   - UI DIRECT retry is state-driven every 50 ms with the same 2000 ms maximum/late-bridge behavior as ĐẶT LÊN.
+   - Editable post-trade cleanup delay defaults to 1000 ms.
+   - MAIN cleanup: X Giao dịch + X popup item only.
+   - CON cleanup: X Giao dịch + X popup item + X Tay nải.
+3. MAIN sell guard
+   - Added checkbox "Hủy giao dịch Phá hoại".
+   - Exact target text is "Hủy bỏ" and is accepted only when paired with the Xác nhận control in the same trade-request popup context.
+   - Guard drains repeated requests before the next sell click and preserves the current sell ordinal.

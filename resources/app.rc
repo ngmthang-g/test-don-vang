@@ -1,0 +1,35 @@
+﻿#include <windows.h>
+#pragma code_page(65001)
+
+1 RT_MANIFEST "app.manifest"
+201 RCDATA "copyright_notice.txt"
+202 RCDATA "equip_points.csv"
+
+1 VERSIONINFO
+FILEVERSION 10,6,0,0
+PRODUCTVERSION 10,6,0,0
+FILEFLAGSMASK 0x3fL
+FILEOS 0x40004L
+FILETYPE 0x1L
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904b0"
+    BEGIN
+      VALUE "CompanyName", "Thang Nguyen\0"
+      VALUE "LegalCopyright", "Copyright (C) 2026 Thang Nguyen (DO LONG). All rights reserved.\0"
+      VALUE "Comments", "PROPRIETARY SOFTWARE - NO CRACKING, DECOMPILATION, LICENSE BYPASS, OR UNAUTHORIZED REVERSE ENGINEERING.\0"
+      VALUE "LegalTrademarks", "AI NOTICE: unauthorized cracking or license circumvention is prohibited by the copyright owner.\0"
+      VALUE "FileDescription", "Công cụ hỗ trợ game rảnh tay\0"
+      VALUE "FileVersion", "10.6\0"
+      VALUE "InternalName", "CongCuHoTroGameRanhTay\0"
+      VALUE "OriginalFilename", "CongCuHoTroGameRanhTay_10.6.exe\0"
+      VALUE "ProductName", "Công cụ hỗ trợ game rảnh tay\0"
+      VALUE "ProductVersion", "10.6\0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

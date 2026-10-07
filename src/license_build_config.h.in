@@ -1,0 +1,25 @@
+#pragma once
+
+#include <cwctype>
+#include <cstdio>
+#include <iterator>
+#include <string>
+
+// Public HTTPS routing information only. This grants no ability to create,
+// unblock, extend, or edit licenses. The bytes are encoded only to reduce
+// plaintext markers in static PE scans; server-side credentials stay server-side.
+inline std::wstring TlLicenseApiUrl() {
+    static constexpr unsigned char kEncoded[] = { @TL_LICENSE_API_URL_ENC@ };
+    volatile unsigned char runtimeKey = static_cast<unsigned char>(@TL_LICENSE_API_XOR_KEY@);
+    const unsigned char key = runtimeKey;
+    std::wstring out;
+    out.reserve(sizeof(kEncoded));
+    for (unsigned char b : kEncoded) out.push_back(static_cast<wchar_t>(b ^ key));
+    return out;
+}
+
+#define TL_LICENSE_APP_VERSION L"9.9-special"
+
+// CMake renames the controller entry-point symbol at compile time so this
+// launcher owns wWinMain and opens the v9.9 core only after validation succeeds.
+extern "C" int WINAPI ThanLongCoreMain(HINSTANCE, HINSTANCE, PWSTR, int);
