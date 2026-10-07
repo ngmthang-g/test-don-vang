@@ -88,7 +88,6 @@ constexpr int IDC_MAIN_MACRO_SELL_CLOSE = 5909;
 constexpr int IDC_MAIN_MACRO_SELL_WAY2 = 5910;
 constexpr int IDC_MAIN_MACRO_SELL_CANCEL_SABOTAGE = 5911;
 constexpr UINT_PTR kRecordTimer = 2;
-constexpr UINT_PTR kMainGapClickTimer = 3;
 constexpr int kCaptureHotkeyId = 9001;
 constexpr int kPauseHotkeyId = 9002;
 constexpr DWORD kClientStableResumeMs = 2000;
@@ -306,10 +305,6 @@ constexpr int IDC_SC_POST_TRADE_ENABLED = 691;
 constexpr int IDC_SC_POST_TRADE_DELAY = 692;
 constexpr int IDC_SC_POST_TRADE_REPEAT = 693;
 constexpr int IDC_SC_POST_TRADE_CAPTURE = 694;
-constexpr int IDC_SC_MAIN_GAP_ENABLED = 695;
-constexpr int IDC_SC_MAIN_GAP_TIME = 696;
-constexpr int IDC_SC_MAIN_GAP_DELAY = 697;
-constexpr int IDC_SC_MAIN_GAP_CAPTURE = 698;
 // Telegram controls use a dedicated range to stay isolated from the main editor.
 constexpr int IDC_TG_ENABLED = 500;
 constexpr int IDC_TG_TOKEN = 501;
@@ -466,15 +461,6 @@ struct ShortcutSettings {
     ClickPoint postTradeClick{};
     int postTradeClickDelayMs = 200;
     int postTradeClickRepeat = 1; // 0 = enabled but intentionally do no click.
-
-    // Separate MAIN-only infinite hidden click. It never becomes a TradeSequenceStep.
-    // It is armed only after post-pass snapshot reasoning confirms SAME CHILD for
-    // the next pass, runs only during that TargetMain gap, and pauses
-    // while MAIN is selling. No semantic/UI correctness check is performed.
-    bool mainGapClickEnabled = false;
-    ClickPoint mainGapClick{};
-    int mainGapClickTimeMs = 0;   // one-time wait when the post-sequence gap opens
-    int mainGapClickDelayMs = 200; // interval between infinite clicks
 
     // THĐC coordinates belong to the exact source map containing each gate.
     int thdcEntryX = 8257, thdcEntryY = 148110;             // M10000 -> M10014
@@ -1183,16 +1169,6 @@ ShortcutSettings LoadShortcutSettings() {
                               sc.postTradeClick.baseW > 0 && sc.postTradeClick.baseH > 0;
     sc.postTradeClickDelayMs = std::clamp(ReadIniInt(section, L"PostTradeClickDelayMs", 200), 0, 60000);
     sc.postTradeClickRepeat = std::clamp(ReadIniInt(section, L"PostTradeClickRepeat", 1), 0, 999);
-    sc.mainGapClickEnabled = ReadIniInt(section, L"MainGapClickEnabled", 0) != 0;
-    sc.mainGapClick.x = ReadIniInt(section, L"MainGapClickX", -1);
-    sc.mainGapClick.y = ReadIniInt(section, L"MainGapClickY", -1);
-    sc.mainGapClick.baseW = ReadIniInt(section, L"MainGapClickW", 0);
-    sc.mainGapClick.baseH = ReadIniInt(section, L"MainGapClickH", 0);
-    sc.mainGapClick.valid = ReadIniInt(section, L"MainGapClickValid", 0) != 0 &&
-                            sc.mainGapClick.x >= 0 && sc.mainGapClick.y >= 0 &&
-                            sc.mainGapClick.baseW > 0 && sc.mainGapClick.baseH > 0;
-    sc.mainGapClickTimeMs = std::clamp(ReadIniInt(section, L"MainGapClickTimeMs", 0), 0, 60000);
-    sc.mainGapClickDelayMs = std::clamp(ReadIniInt(section, L"MainGapClickDelayMs", 200), 0, 60000);
     const int coordinateVersion = ReadIniInt(section, L"CoordinateVersion", 0);
     if (coordinateVersion >= 3) {
         sc.kunlunNpcX = ReadIniInt(section, L"KunLunNpcX", 0); sc.kunlunNpcY = ReadIniInt(section, L"KunLunNpcY", 0);
@@ -1286,14 +1262,6 @@ void SaveShortcutSettings(const ShortcutSettings& sc) {
     WriteIniInt(section, L"PostTradeClickH", sc.postTradeClick.valid ? sc.postTradeClick.baseH : 0);
     WriteIniInt(section, L"PostTradeClickDelayMs", std::clamp(sc.postTradeClickDelayMs, 0, 60000));
     WriteIniInt(section, L"PostTradeClickRepeat", std::clamp(sc.postTradeClickRepeat, 0, 999));
-    WriteIniInt(section, L"MainGapClickEnabled", sc.mainGapClickEnabled ? 1 : 0);
-    WriteIniInt(section, L"MainGapClickValid", sc.mainGapClick.valid ? 1 : 0);
-    WriteIniInt(section, L"MainGapClickX", sc.mainGapClick.valid ? sc.mainGapClick.x : -1);
-    WriteIniInt(section, L"MainGapClickY", sc.mainGapClick.valid ? sc.mainGapClick.y : -1);
-    WriteIniInt(section, L"MainGapClickW", sc.mainGapClick.valid ? sc.mainGapClick.baseW : 0);
-    WriteIniInt(section, L"MainGapClickH", sc.mainGapClick.valid ? sc.mainGapClick.baseH : 0);
-    WriteIniInt(section, L"MainGapClickTimeMs", std::clamp(sc.mainGapClickTimeMs, 0, 60000));
-    WriteIniInt(section, L"MainGapClickDelayMs", std::clamp(sc.mainGapClickDelayMs, 0, 60000));
     WriteIniInt(section, L"CoordinateVersion", 5);
     WriteIniInt(section, L"KunLunNpcX", sc.kunlunNpcX); WriteIniInt(section, L"KunLunNpcY", sc.kunlunNpcY);
     WriteIniInt(section, L"XaTruyenX", sc.xaTruyenX); WriteIniInt(section, L"XaTruyenY", sc.xaTruyenY);
@@ -2849,7 +2817,6 @@ private:
         Log(L"HIDDEN ACTION ENGINE ON • auto-click dùng InputSync nội bộ; không chiếm chuột Windows.");
         SetTimer(hwnd_, kTimer, 250, nullptr);
         SetTimer(hwnd_, kTradeSabotageGuardTimer, kTradeSabotageGuardTimerMs, nullptr);
-        SetTimer(hwnd_, kMainGapClickTimer, 10, nullptr);
         RefreshLicenseTitle();
         UpdateTradeRendezvousLabel();
         UpdateRoleActionButtons();
@@ -2877,7 +2844,6 @@ private:
     void SwitchMainTab(int index) {
         if (!mainTab_) return;
         index = std::clamp(index, 0, 4);
-
         if (index == mainTabIndex_) return;
 
         if (mainTabIndex_ == 0) {
@@ -4279,7 +4245,7 @@ private:
         if (index < 0 || index >= 3) return;
         Account* a = SelectedAccount();
         if (!a) { Log(L"AUTO PT F8: hãy chọn một acc làm mẫu tọa client trước."); return; }
-        shortcutPostTradeCapture_ = false; shortcutMainGapCapture_ = false; shortcutKunlunCaptureIndex_ = -1; shortcutTravelExitCaptureGroup_ = -1; shortcutTravelExitCaptureIndex_ = -1;
+        shortcutPostTradeCapture_ = false; shortcutKunlunCaptureIndex_ = -1; shortcutTravelExitCaptureGroup_ = -1; shortcutTravelExitCaptureIndex_ = -1;
         captureSlot_ = ClickSlot::None; captureTradeSequenceIndex_ = -1;
         captureTradeSequenceMode_ = 0; captureTradeSequenceMainRef_ = -1;
         partyBuildCaptureIndex_ = index; capturePid_ = a->game.pid;
@@ -4396,8 +4362,6 @@ private:
         const std::wstring why = reason ? reason : L"exclusive mode";
         if (tradeTxn_.phase != TradePhase::Idle) AbortTrade(why, now);
         else { ReleaseTradeHolds(); ResetTradeTxn(); }
-        mainGapClickArmed_ = false;
-        mainGapClickNextTick_ = 0;
         globalPaused_ = false;
         for (std::size_t i = 0; i < accounts_.size(); ++i) {
             Account& a = *accounts_[i];
@@ -5467,7 +5431,6 @@ private:
         std::array<std::pair<int,int>,7> thdcCoords{};
         std::array<TimedClickPoint,3> kunlunClicks{};
         ClickPoint postTrade{}; int postTradeDelay=0;
-        ClickPoint mainGap{}; int mainGapTime=0; int mainGapDelay=0;
         PartyBuildSettings party{};
         MainMacroSellConfig mainSell{};
         std::vector<PortableCoordRow> mainTrade{};
@@ -5489,7 +5452,6 @@ private:
         const auto td=ThdcCoordinatePairs(shortcutSettings_);o<<L"THDC_COUNT\t7\r\n";for(int i=0;i<7;++i)o<<L"THDC\t"<<i<<L"\t"<<td[(size_t)i].first<<L"\t"<<td[(size_t)i].second<<L"\r\n";
         o<<L"KUNLUN_CLICK_COUNT\t3\r\n";for(int i=0;i<3;++i){const auto&c=shortcutSettings_.kunlunExitClicks[(size_t)i];const auto&p=c.point;o<<L"KUNLUN_CLICK\t"<<i<<L"\t"<<(p.valid?1:0)<<L"\t"<<p.x<<L"\t"<<p.y<<L"\t"<<p.baseW<<L"\t"<<p.baseH<<L"\t"<<c.timeMs<<L"\t"<<c.delayMs<<L"\r\n";}
         {const auto&p=shortcutSettings_.postTradeClick;o<<L"POST_TRADE\t"<<(p.valid?1:0)<<L"\t"<<p.x<<L"\t"<<p.y<<L"\t"<<p.baseW<<L"\t"<<p.baseH<<L"\t"<<shortcutSettings_.postTradeClickDelayMs<<L"\r\n";}
-        {const auto&p=shortcutSettings_.mainGapClick;o<<L"MAIN_GAP\t"<<(p.valid?1:0)<<L"\t"<<p.x<<L"\t"<<p.y<<L"\t"<<p.baseW<<L"\t"<<p.baseH<<L"\t"<<shortcutSettings_.mainGapClickTimeMs<<L"\t"<<shortcutSettings_.mainGapClickDelayMs<<L"\r\n";}
         o<<L"PARTY_CLICK_COUNT\t3\r\n";for(int i=0;i<3;++i){const auto&p=partyBuildSettings_.clicks[(size_t)i];o<<L"PARTY_CLICK\t"<<i<<L"\t"<<(p.valid?1:0)<<L"\t"<<p.x<<L"\t"<<p.y<<L"\t"<<p.baseW<<L"\t"<<p.baseH<<L"\t"<<partyBuildSettings_.delaysMs[(size_t)i]<<L"\r\n";}
         {const auto&p=mainSell.point;o<<L"MAIN_SELL\t"<<(p.valid?1:0)<<L"\t"<<p.x<<L"\t"<<p.y<<L"\t"<<p.baseW<<L"\t"<<p.baseH<<L"\t"<<mainSell.delayMs<<L"\r\n";}
         o<<L"MAIN_TRADE_COUNT\t"<<mainTradeSequence_.size()<<L"\r\n";for(size_t i=0;i<mainTradeSequence_.size();++i){const auto&st=mainTradeSequence_[i];const auto&p=st.point;o<<L"MAIN_TRADE\t"<<i<<L"\t"<<(p.valid?1:0)<<L"\t"<<p.x<<L"\t"<<p.y<<L"\t"<<p.baseW<<L"\t"<<p.baseH<<L"\t"<<st.delayMs<<L"\r\n";}
@@ -5500,7 +5462,7 @@ private:
     bool ParsePortableCoordinateConfig(const std::wstring& text,PortableCoordinateData&out,std::wstring&error){
         out={};out.shortcutCoords=ShortcutCoordinatePairs(shortcutSettings_);out.thdcCoords=ThdcCoordinatePairs(shortcutSettings_);out.party=partyBuildSettings_;
         auto point=[&](const std::vector<std::wstring>&f,size_t off,ClickPoint&dst)->bool{if(f.size()<off+5)return false;int v=0,x=0,y=0,w=0,h=0;if(!ParsePortableInt(f[off],v)||!ParsePortableInt(f[off+1],x)||!ParsePortableInt(f[off+2],y)||!ParsePortableInt(f[off+3],w)||!ParsePortableInt(f[off+4],h)||(v!=0&&v!=1))return false;if(v&&(x<0||y<0||w<=0||h<=0))return false;dst={x,y,w,h,v!=0};return true;};
-        bool header=false,end=false,sawGather=false,sawRv=false,sawPost=false,sawGap=false,sawMainSell=false,sawFilter=false;int pc=-1,snpc=-1,scn=-1,tdn=-1,kcn=-1,pcn=-1,mtc=-1,ctc=-1;int pSeen=0,snSeen=0,scSeen=0,tdSeen=0,kcSeen=0,partySeen=0,mtSeen=0,ctSeen=0;
+        bool header=false,end=false,sawGather=false,sawRv=false,sawPost=false,sawMainSell=false,sawFilter=false;int pc=-1,snpc=-1,scn=-1,tdn=-1,kcn=-1,pcn=-1,mtc=-1,ctc=-1;int pSeen=0,snSeen=0,scSeen=0,tdSeen=0,kcSeen=0,partySeen=0,mtSeen=0,ctSeen=0;
         std::array<bool,5> pset{};std::array<bool,kSellNpcs.size()> snset{};std::array<bool,7> scset{},tdset{};std::array<bool,3> kcset{},partyset{};
         std::size_t start=0;while(start<=text.size()){std::size_t e=text.find(L'\n',start);std::wstring line=text.substr(start,e==std::wstring::npos?std::wstring::npos:e-start);if(!line.empty()&&line.back()==L'\r')line.pop_back();if(!line.empty()){const auto f=SplitPortableLine(line);if(!header){int v=0;if(f.size()!=2||f[0]!=L"TLCOORDCFG"||!ParsePortableInt(f[1],v)||v!=1){error=L"Sai định dạng/version file tọa";return false;}header=true;}
         else if(f[0]==L"PROFILE_COUNT"){if(f.size()!=2||pc>=0||!ParsePortableInt(f[1],pc)||pc!=5){error=L"PROFILE_COUNT phải=5";return false;}}
@@ -5513,7 +5475,6 @@ private:
         else if(f[0]==L"KUNLUN_CLICK_COUNT"||f[0]==L"PARTY_CLICK_COUNT"){int n=0;if(f.size()!=2||!ParsePortableInt(f[1],n)){error=L"click count lỗi";return false;}if(f[0]==L"KUNLUN_CLICK_COUNT"){if(kcn>=0||n!=3){error=L"KUNLUN count lỗi";return false;}kcn=n;}else{if(pcn>=0||n!=3){error=L"PARTY count lỗi";return false;}pcn=n;}}
         else if(f[0]==L"KUNLUN_CLICK"){int i=-1,t=0,d=0;if(f.size()!=9||!ParsePortableInt(f[1],i)||!ParsePortableInt(f[7],t)||!ParsePortableInt(f[8],d)||t<0||t>60000||d<0||d>60000){error=L"timed click lỗi";return false;}TimedClickPoint c{};if(!point(f,2,c.point)){error=L"timed click geometry lỗi";return false;}c.timeMs=t;c.delayMs=d;if(i<0||i>=3||kcset[(size_t)i]){error=L"KUNLUN index/trùng";return false;}out.kunlunClicks[(size_t)i]=c;kcset[(size_t)i]=true;++kcSeen;}
         else if(f[0]==L"POST_TRADE"){if(sawPost||f.size()!=7||!point(f,1,out.postTrade)||!ParsePortableInt(f[6],out.postTradeDelay)||out.postTradeDelay<0||out.postTradeDelay>60000){error=L"POST_TRADE lỗi/trùng";return false;}sawPost=true;}
-        else if(f[0]==L"MAIN_GAP"){if(sawGap||f.size()!=8||!point(f,1,out.mainGap)||!ParsePortableInt(f[6],out.mainGapTime)||!ParsePortableInt(f[7],out.mainGapDelay)||out.mainGapTime<0||out.mainGapTime>60000||out.mainGapDelay<0||out.mainGapDelay>60000){error=L"MAIN_GAP lỗi/trùng";return false;}sawGap=true;}
         else if(f[0]==L"PARTY_CLICK"){int i=-1,d=0;if(f.size()!=8||!ParsePortableInt(f[1],i)||i<0||i>=3||partyset[(size_t)i]||!point(f,2,out.party.clicks[(size_t)i])||!ParsePortableInt(f[7],d)||d<0||d>60000){error=L"PARTY_CLICK lỗi/trùng";return false;}out.party.delaysMs[(size_t)i]=d;partyset[(size_t)i]=true;++partySeen;}
         else if(f[0]==L"MAIN_SELL"){if(sawMainSell||f.size()!=7||!point(f,1,out.mainSell.point)||!ParsePortableInt(f[6],out.mainSell.delayMs)||out.mainSell.delayMs<0||out.mainSell.delayMs>60000){error=L"MAIN_SELL lỗi/trùng";return false;}sawMainSell=true;}
         else if(f[0]==L"MAIN_TRADE_COUNT"||f[0]==L"CHILD_TRADE_COUNT"){int n=0;if(f.size()!=2||!ParsePortableInt(f[1],n)||n<0||n>64){error=L"TRADE_COUNT lỗi";return false;}if(f[0]==L"MAIN_TRADE_COUNT"){if(mtc>=0){error=L"MAIN_TRADE_COUNT trùng";return false;}mtc=n;out.mainTrade.resize((size_t)n);for(auto&r:out.mainTrade)r.delayMs=-1;}else{if(ctc>=0){error=L"CHILD_TRADE_COUNT trùng";return false;}ctc=n;out.childTrade.resize((size_t)n);for(auto&r:out.childTrade)r.delayMs=-1;}}
@@ -5521,7 +5482,7 @@ private:
         else if(f[0]==L"FILTER_BLOB"){if(sawFilter||f.size()!=2||!UnescapePortableField(f[1],out.filterBlob)){error=L"FILTER_BLOB lỗi/trùng";return false;}std::wstring fe;if(!image_scan_test::ValidatePortableCoordinates(out.filterBlob,fe)){error=L"FILTER_BLOB: "+fe;return false;}sawFilter=true;}
         else if(f[0]==L"END"){if(end||f.size()!=2||f[1]!=L"1"){error=L"END lỗi/trùng";return false;}end=true;}else{error=L"Dòng tọa không nhận dạng: "+f[0];return false;}}
         if(e==std::wstring::npos)break;start=e+1;}
-        if(!header||!end||pc!=5||pSeen!=5||!sawGather||!sawRv||snpc!=(int)kSellNpcs.size()||snSeen!=snpc||scn!=7||scSeen!=7||tdn!=7||tdSeen!=7||kcn!=3||kcSeen!=3||!sawPost||!sawGap||pcn!=3||partySeen!=3||!sawMainSell||mtc<0||mtSeen!=mtc||ctc<0||ctSeen!=ctc||!sawFilter){error=L"File tọa thiếu section/count bắt buộc";return false;}
+        if(!header||!end||pc!=5||pSeen!=5||!sawGather||!sawRv||snpc!=(int)kSellNpcs.size()||snSeen!=snpc||scn!=7||scSeen!=7||tdn!=7||tdSeen!=7||kcn!=3||kcSeen!=3||!sawPost||pcn!=3||partySeen!=3||!sawMainSell||mtc<0||mtSeen!=mtc||ctc<0||ctSeen!=ctc||!sawFilter){error=L"File tọa thiếu section/count bắt buộc";return false;}
         error.clear();return true;
     }
 
@@ -5529,7 +5490,7 @@ private:
         EnsureSharedChildTradeSequence();if(in.mainTrade.size()!=mainTradeSequence_.size()||in.childTrade.size()!=childTradeSequence_.size()){error=L"Số dòng CHUỖI GD trên PC đích khác file tọa. Chỉ nhập tọa/Time/Delay, không thay cấu trúc chuỗi.";return false;}
         target.profile.points=in.profilePoints;
         gatherTarget_=in.gather;gatherTarget_.name=L"TẬP TRUNG";tradeRendezvous_=in.rendezvous;tradeRendezvous_.name=L"TỌA GD";sellNpcPositions_=in.sellerPositions;
-        ApplyShortcutCoordinatePairs(shortcutSettings_,in.shortcutCoords);ApplyThdcCoordinatePairs(shortcutSettings_,in.thdcCoords);shortcutSettings_.kunlunExitClicks=in.kunlunClicks;shortcutSettings_.postTradeClick=in.postTrade;shortcutSettings_.postTradeClickDelayMs=in.postTradeDelay;shortcutSettings_.mainGapClick=in.mainGap;shortcutSettings_.mainGapClickTimeMs=in.mainGapTime;shortcutSettings_.mainGapClickDelayMs=in.mainGapDelay;
+        ApplyShortcutCoordinatePairs(shortcutSettings_,in.shortcutCoords);ApplyThdcCoordinatePairs(shortcutSettings_,in.thdcCoords);shortcutSettings_.kunlunExitClicks=in.kunlunClicks;shortcutSettings_.postTradeClick=in.postTrade;shortcutSettings_.postTradeClickDelayMs=in.postTradeDelay;
         partyBuildSettings_.clicks=in.party.clicks;partyBuildSettings_.delaysMs=in.party.delaysMs;
         MainMacroSellConfig currentSell{};LoadMainMacroSellConfig(target,currentSell,true);currentSell.point=in.mainSell.point;currentSell.delayMs=ClampMainMacroDelay(in.mainSell.delayMs);SaveMainMacroSellConfig(target,currentSell);
         for(size_t i=0;i<mainTradeSequence_.size();++i){mainTradeSequence_[i].point=in.mainTrade[i].point;mainTradeSequence_[i].delayMs=std::clamp(in.mainTrade[i].delayMs,50,60000);}for(size_t i=0;i<childTradeSequence_.size();++i){childTradeSequence_[i].point=in.childTrade[i].point;childTradeSequence_[i].delayMs=std::clamp(in.childTrade[i].delayMs,50,60000);}
@@ -6411,7 +6372,6 @@ private:
         if (!target || !point) { Log(L"BĐPT: không xác định được cửa sổ để lấy tọa độ chuỗi GD."); return; }
 
         shortcutPostTradeCapture_ = false;
-        shortcutMainGapCapture_ = false;
         captureSlot_ = ClickSlot::None;
         captureTradeSequenceIndex_ = row;
         captureTradeSequenceMode_ = tradeEditorMode_;
@@ -6627,14 +6587,6 @@ private:
                 : L"CHƯA GÁN • chọn 1 acc mẫu, đưa chuột vào game rồi F8");
         if (shortcutPostTradeDelay_) SetText(shortcutPostTradeDelay_, std::to_wstring(shortcutSettings_.postTradeClickDelayMs));
         if (shortcutPostTradeRepeat_) SetText(shortcutPostTradeRepeat_, std::to_wstring(shortcutSettings_.postTradeClickRepeat));
-        if (shortcutMainGapEnabled_)
-            SendMessageW(shortcutMainGapEnabled_, BM_SETCHECK, shortcutSettings_.mainGapClickEnabled ? BST_CHECKED : BST_UNCHECKED, 0);
-        if (shortcutMainGapPointLabel_)
-            SetText(shortcutMainGapPointLabel_, shortcutSettings_.mainGapClick.valid
-                ? PointDescription(shortcutSettings_.mainGapClick)
-                : L"CHƯA GÁN • chọn MAIN, đưa chuột vào game rồi F8");
-        if (shortcutMainGapTime_) SetText(shortcutMainGapTime_, std::to_wstring(shortcutSettings_.mainGapClickTimeMs));
-        if (shortcutMainGapDelay_) SetText(shortcutMainGapDelay_, std::to_wstring(shortcutSettings_.mainGapClickDelayMs));
         RefreshShortcutSellerUi();
     }
 
@@ -6673,14 +6625,8 @@ private:
             shortcutSettings_.postTradeClickDelayMs = ParseEditInt(shortcutPostTradeDelay_, shortcutSettings_.postTradeClickDelayMs, 0, 60000);
         if (shortcutPostTradeRepeat_)
             shortcutSettings_.postTradeClickRepeat = ParseEditInt(shortcutPostTradeRepeat_, shortcutSettings_.postTradeClickRepeat, 0, 999);
-        if (shortcutMainGapEnabled_)
-            shortcutSettings_.mainGapClickEnabled = SendMessageW(shortcutMainGapEnabled_, BM_GETCHECK, 0, 0) == BST_CHECKED;
-        if (shortcutMainGapTime_)
-            shortcutSettings_.mainGapClickTimeMs = ParseEditInt(shortcutMainGapTime_, shortcutSettings_.mainGapClickTimeMs, 0, 60000);
-        if (shortcutMainGapDelay_)
-            shortcutSettings_.mainGapClickDelayMs = ParseEditInt(shortcutMainGapDelay_, shortcutSettings_.mainGapClickDelayMs, 0, 60000);
         SaveShortcutSettings(shortcutSettings_);
-        if (logSaved) Log(L"TÙY CHỈNH 10.2: đã lưu tọa + 3 click CLS Time/Delay + 7 cổng THĐC + Click Sau Target Main + Auto Click MAIN Khoảng Trống.");
+        if (logSaved) Log(L"TÙY CHỈNH 10.2: đã lưu tọa + 3 click CLS Time/Delay + 7 cổng THĐC + Click Sau Target Main.");
     }
 
     void ApplyShortcutPanelTheme(HWND hwnd) {
@@ -6834,18 +6780,6 @@ private:
         MakeIn(parent,L"BUTTON",L"LẤY CLICK (F8)",BS_PUSHBUTTON,760,686,143,28,IDC_SC_POST_TRADE_CAPTURE);
         MakeIn(parent,L"STATIC",L"ms",SS_LEFT|SS_CENTERIMAGE,612,686,24,28,0);
 
-        MakeIn(parent,L"STATIC",L"AUTO CLICK MAIN KHOẢNG TRỐNG • ĐỘC LẬP CHUỖI GD • sau pass chạy tới lượt TARGET tiếp; MAIN bán = PAUSE, bán xong = RESUME",
-               SS_LEFT|SS_CENTERIMAGE|WS_BORDER,15,726,930,30,0);
-        shortcutMainGapEnabled_=MakeIn(parent,L"BUTTON",L"Bật",BS_AUTOCHECKBOX,15,764,72,28,IDC_SC_MAIN_GAP_ENABLED);
-        shortcutMainGapPointLabel_=MakeIn(parent,L"STATIC",L"",SS_LEFT|SS_CENTERIMAGE|WS_BORDER,90,764,350,28,0);
-        MakeIn(parent,L"STATIC",L"Time",SS_CENTERIMAGE,447,764,38,28,0);
-        shortcutMainGapTime_=MakeIn(parent,L"EDIT",L"",WS_BORDER|ES_NUMBER|ES_CENTER,487,764,58,28,IDC_SC_MAIN_GAP_TIME);
-        MakeIn(parent,L"STATIC",L"ms",SS_LEFT|SS_CENTERIMAGE,548,764,24,28,0);
-        MakeIn(parent,L"STATIC",L"Delay",SS_CENTERIMAGE,577,764,42,28,0);
-        shortcutMainGapDelay_=MakeIn(parent,L"EDIT",L"",WS_BORDER|ES_NUMBER|ES_CENTER,622,764,58,28,IDC_SC_MAIN_GAP_DELAY);
-        MakeIn(parent,L"STATIC",L"ms",SS_LEFT|SS_CENTERIMAGE,683,764,24,28,0);
-        MakeIn(parent,L"BUTTON",L"LẤY CLICK MAIN (F8)",BS_PUSHBUTTON,712,764,191,28,IDC_SC_MAIN_GAP_CAPTURE);
-
         MakeIn(parent,L"BUTTON",L"10.6 EXIT • 4 CỤM",BS_PUSHBUTTON,500,812,190,32,IDC_SC_EXIT_EDITOR);
         MakeIn(parent,L"BUTTON",L"LƯU",BS_DEFPUSHBUTTON,705,812,105,32,IDC_SC_SAVE);
         MakeIn(parent,L"BUTTON",L"ĐÓNG",BS_PUSHBUTTON,820,812,125,32,IDC_SC_CLOSE);
@@ -6868,7 +6802,6 @@ private:
         Account* a=SelectedAccount();
         if(!a){Log(L"ĐƯỜNG TẮT: chọn 1 acc mẫu trước khi lấy 3 click RỜI Côn Lôn.");return;}
         shortcutPostTradeCapture_=false;
-        shortcutMainGapCapture_=false;
         shortcutKunlunCaptureIndex_=index; captureSlot_=ClickSlot::None; captureTradeSequenceIndex_=-1;
         captureTradeSequenceMode_=0; captureTradeSequenceMainRef_=-1; capturePid_=a->game.pid;
         static constexpr const wchar_t* labels[3] = {L"mở NPC rời Côn Lôn",L"chọn dòng Đại Lý",L"bấm Xác nhận"};
@@ -6882,7 +6815,6 @@ private:
             Log(L"CLICK SAU TARGET MAIN: chọn 1 acc mẫu trước khi LẤY CLICK F8.");
             return;
         }
-        shortcutMainGapCapture_ = false;
         shortcutPostTradeCapture_ = true;
         shortcutKunlunCaptureIndex_ = -1;
         shortcutTravelExitCaptureGroup_ = -1; shortcutTravelExitCaptureIndex_ = -1;
@@ -6892,25 +6824,6 @@ private:
         captureTradeSequenceMainRef_ = -1;
         capturePid_ = a->game.pid;
         LogAccount(*a, L"CLICK SAU TARGET MAIN: đưa chuột vào đúng điểm trong game rồi F8 • một tọa dùng cho MAIN + CON vừa giao dịch.");
-    }
-
-    void BeginMainGapClickCapture() {
-        Account* a = SelectedAccount();
-        if (!a || a->profile.tradeRole != kMainTradeRole) {
-            Log(L"AUTO CLICK MAIN KHOẢNG TRỐNG: hãy chọn đúng acc MAIN trước khi LẤY CLICK F8.");
-            return;
-        }
-        shortcutPostTradeCapture_ = false;
-        shortcutMainGapCapture_ = false;
-        shortcutKunlunCaptureIndex_ = -1;
-        shortcutTravelExitCaptureGroup_ = -1; shortcutTravelExitCaptureIndex_ = -1;
-        captureSlot_ = ClickSlot::None;
-        captureTradeSequenceIndex_ = -1;
-        captureTradeSequenceMode_ = 0;
-        captureTradeSequenceMainRef_ = -1;
-        capturePid_ = a->game.pid;
-        shortcutMainGapCapture_ = true;
-        LogAccount(*a, L"AUTO CLICK MAIN KHOẢNG TRỐNG: đưa chuột đúng tọa trong cửa sổ MAIN rồi nhấn F8 • không check UI.");
     }
 
     LRESULT HandleShortcutWindow(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -6931,10 +6844,6 @@ private:
                     case IDC_SC_POST_TRADE_ENABLED: if(HIWORD(wp)==BN_CLICKED) PersistShortcutSettingsFromUi(false); return 0;
                     case IDC_SC_POST_TRADE_DELAY: case IDC_SC_POST_TRADE_REPEAT:
                         if(HIWORD(wp)==EN_KILLFOCUS) PersistShortcutSettingsFromUi(false); return 0;
-                    case IDC_SC_MAIN_GAP_CAPTURE: if(HIWORD(wp)==BN_CLICKED) BeginMainGapClickCapture(); return 0;
-                    case IDC_SC_MAIN_GAP_ENABLED: if(HIWORD(wp)==BN_CLICKED) PersistShortcutSettingsFromUi(false); return 0;
-                    case IDC_SC_MAIN_GAP_TIME: case IDC_SC_MAIN_GAP_DELAY:
-                        if(HIWORD(wp)==EN_KILLFOCUS) PersistShortcutSettingsFromUi(false); return 0;
                     case IDC_SC_EXIT_EDITOR: if(HIWORD(wp)==BN_CLICKED){PersistShortcutSettingsFromUi(false);OpenTravelExitWindow();} return 0;
                     case IDC_SC_SAVE: if(HIWORD(wp)==BN_CLICKED){PersistShortcutSettingsFromUi();ApplyShortcutPanelTheme(hwnd);LoadShortcutSettingsToUi();} return 0;
                     case IDC_SC_CLOSE: if(HIWORD(wp)==BN_CLICKED){PersistShortcutSettingsFromUi(false);ShowWindow(hwnd,SW_HIDE);} return 0;
@@ -6948,7 +6857,6 @@ private:
             case WM_NCDESTROY:
                 shortcutWindow_=nullptr;shortcutTheme_=nullptr;shortcutSellerCombo_=nullptr;shortcutSellerCoordLabel_=nullptr;
                 shortcutPostTradeEnabled_=nullptr;shortcutPostTradePointLabel_=nullptr;shortcutPostTradeDelay_=nullptr;shortcutPostTradeRepeat_=nullptr;
-                shortcutMainGapEnabled_=nullptr;shortcutMainGapPointLabel_=nullptr;shortcutMainGapTime_=nullptr;shortcutMainGapDelay_=nullptr;shortcutMainGapCapture_=false;
                 shortcutCoordEdits_.fill(nullptr);shortcutClickLabels_.fill(nullptr);shortcutClickTimeEdits_.fill(nullptr);
                 shortcutClickDelayEdits_.fill(nullptr);return 0;
         }
@@ -7009,7 +6917,7 @@ private:
         if(!a){Log(L"10.6 EXIT: chọn 1 acc mẫu trước khi lấy click F8.");return;}
         PersistTravelExitUi(false);
         shortcutTravelExitCaptureGroup_=group; shortcutTravelExitCaptureIndex_=index;
-        shortcutKunlunCaptureIndex_=-1; shortcutPostTradeCapture_=false; shortcutMainGapCapture_=false;
+        shortcutKunlunCaptureIndex_=-1; shortcutPostTradeCapture_=false;
         captureSlot_=ClickSlot::None; captureTradeSequenceIndex_=-1; captureTradeSequenceMode_=0; captureTradeSequenceMainRef_=-1; capturePid_=a->game.pid;
         static constexpr const wchar_t* names[4]={L"NAM HẢI",L"MIÊU CƯƠNG",L"HOÀNG LONG PHỦ",L"M60"};
         LogAccount(*a,L"10.6 EXIT "+std::wstring(names[group])+L": đưa chuột đúng click "+std::to_wstring(index+1)+L"/3 rồi F8.");
@@ -7726,34 +7634,6 @@ private:
         main.runtime.sellBlockReportCode = code;
         AddLocalReport(L"SELL BLOCKED", TelegramAccountLabel(main), detail + L" • fail-closed, chưa gửi click • " + LocalDateTimeText());
     }
-    void ResetMainGapClickRuntime() {
-        mainGapClickArmed_ = false; mainGapClickNextTick_ = 0; mainGapClickErrorLatched_ = false;
-    }
-    void ArmMainGapClickAfterPostPass(DWORD now, Account& main, const wchar_t* reason) {
-        if (!shortcutSettings_.mainGapClickEnabled || !shortcutSettings_.mainGapClick.valid) { ResetMainGapClickRuntime(); return; }
-        mainGapClickArmed_ = true;
-        mainGapClickNextTick_ = now + static_cast<DWORD>(std::clamp(shortcutSettings_.mainGapClickTimeMs, 0, 60000));
-        mainGapClickErrorLatched_ = false;
-        LogAccount(main, L"AUTO CLICK MAIN KHOẢNG TRỐNG • ARM sau POST-PASS đã xác nhận giữ cùng CON • " + std::wstring(reason ? reason : L"TargetMain pass kế"));
-    }
-    void TickMainGapClick(DWORD now) {
-        if (!shortcutSettings_.mainGapClickEnabled || !shortcutSettings_.mainGapClick.valid) { ResetMainGapClickRuntime(); return; }
-        Account* main = AccountByTradeRole(kMainTradeRole);
-        if (!main || !main->runtime.running || !IsWindow(main->game.window)) { ResetMainGapClickRuntime(); return; }
-        if (tradeTxn_.phase == TradePhase::Sequence || tradeTxn_.phase == TradePhase::Cleanup) { ResetMainGapClickRuntime(); return; }
-        if (!mainGapClickArmed_) return;
-        if (tradeTxn_.phase != TradePhase::TargetMain) { if (tradeTxn_.phase != TradePhase::SellPause) ResetMainGapClickRuntime(); return; }
-        if (main->runtime.sellPhase != 0) return;
-        if (mainGapClickNextTick_ != 0 && static_cast<LONG>(now - mainGapClickNextTick_) < 0) return;
-        std::wstring error;
-        if (!MainIdlePointClick(*main, shortcutSettings_.mainGapClick, error)) {
-            if (!mainGapClickErrorLatched_) { mainGapClickErrorLatched_ = true; LogAccount(*main, L"AUTO CLICK MAIN KHOẢNG TRỐNG • click lỗi, retry độc lập • " + error); }
-            mainGapClickNextTick_ = now + 500; return;
-        }
-        mainGapClickErrorLatched_ = false;
-        mainGapClickNextTick_ = GetTickCount() + static_cast<DWORD>(std::clamp(shortcutSettings_.mainGapClickDelayMs, 0, 60000));
-    }
-
 
     bool ExecuteTradeMenuOpenClickTick(Account& child, DWORD now) {
         if (tradeTxn_.postTradeClickCompleted) return false;
@@ -8014,12 +7894,10 @@ private:
         }
         PrepareNextPass(now);
         if (trade_quota_v18_logic::MainNeedsSell(mainCapacityPlan_)) {
-            ResetMainGapClickRuntime();
             PauseTradeForMainSell(TradePhase::TargetMain, now, L"MAIN quota vừa về 0 sau full pass; giữ nguyên CON còn quota");
             return true;
         }
         tradeTxn_.phase = TradePhase::TargetMain;
-        ArmMainGapClickAfterPostPass(now, main, L"quota MAIN+CON còn >0 → target pass kế ngay");
         SetTradeStatus(L"TRADE QUOTA • CON" + std::to_wstring(tradeTxn_.childSlot) +
                        L" • pass kế #" + std::to_wstring(tradeTxn_.sequencePass) +
                        L" • M=" + std::to_wstring(mainCapacityPlan_.passesRemaining) +
@@ -8553,7 +8431,6 @@ private:
             if (!mainCapacityPlan_.valid || mainCapacityPlan_.passesRemaining <= 0) return;
             if (!tradeTxn_.childPlan.valid || tradeTxn_.childPlan.passesRemaining <= 0) { AbortTrade(L"CON quota mất khi resume seller", now); return; }
             const TradePhase resume = tradeTxn_.resumeAfterSell; tradeTxn_.resumeAfterSell = TradePhase::TargetMain; tradeTxn_.phase = resume;
-            if (resume == TradePhase::TargetMain) { tradeTxn_.targetStartedTick=now;tradeTxn_.targetRetryTick=now;tradeTxn_.targetLastSelectTick=0;tradeTxn_.targetAttempts=0;ArmMainGapClickAfterPostPass(now,*activeMain,L"MAIN re-plan quota xong → TARGET cùng CON"); }
             LogAccount(*activeChild,L"MAIN quota mới="+std::to_wstring(mainCapacityPlan_.passesRemaining)+L" • giữ đúng CON còn="+std::to_wstring(tradeTxn_.childPlan.passesRemaining)+L" pass.");
             AddLocalReport(L"TRADE QUOTA RESUME",TelegramAccountLabel(*activeChild),L"M="+std::to_wstring(mainCapacityPlan_.passesRemaining)+L" • C="+std::to_wstring(tradeTxn_.childPlan.passesRemaining)+L" • same child");
             return;
@@ -8909,7 +8786,6 @@ private:
         Account* a = SelectedAccount();
         if (!a) { Log(L"Chưa chọn acc để lấy tọa độ"); return; }
         shortcutPostTradeCapture_ = false;
-        shortcutMainGapCapture_ = false;
         shortcutTravelExitCaptureGroup_ = -1; shortcutTravelExitCaptureIndex_ = -1;
         captureSlot_ = slot;
         captureTradeSequenceIndex_ = -1;
@@ -8922,41 +8798,6 @@ private:
     }
 
     void CaptureHotkeyPoint() {
-        if (shortcutMainGapCapture_) {
-            shortcutMainGapCapture_ = false;
-            Account* a = AccountByPid(capturePid_);
-            if (!a || a->profile.tradeRole != kMainTradeRole || !IsWindow(a->game.window)) {
-                Log(L"AUTO CLICK MAIN KHOẢNG TRỐNG: MAIN/cửa sổ không còn hợp lệ khi nhấn F8.");
-                capturePid_ = 0;
-                return;
-            }
-            POINT screen{};
-            if (!GetCursorPos(&screen)) {
-                LogAccount(*a, L"AUTO CLICK MAIN KHOẢNG TRỐNG: không đọc được vị trí chuột F8.");
-                capturePid_ = 0;
-                return;
-            }
-            POINT client = screen;
-            RECT rc{};
-            if (!ScreenToClient(a->game.window, &client) || !GetClientRect(a->game.window, &rc)) {
-                LogAccount(*a, L"AUTO CLICK MAIN KHOẢNG TRỐNG: không đổi được tọa chuột sang client MAIN.");
-                capturePid_ = 0;
-                return;
-            }
-            const int width = rc.right - rc.left;
-            const int height = rc.bottom - rc.top;
-            if (width <= 0 || height <= 0 || client.x < 0 || client.y < 0 || client.x >= width || client.y >= height) {
-                LogAccount(*a, L"AUTO CLICK MAIN KHOẢNG TRỐNG: F8 nằm ngoài vùng client MAIN, không lưu.");
-                capturePid_ = 0;
-                return;
-            }
-            shortcutSettings_.mainGapClick = ClickPoint{client.x, client.y, width, height, true};
-            SaveShortcutSettings(shortcutSettings_);
-            LoadShortcutSettingsToUi();
-            LogAccount(*a, L"AUTO CLICK MAIN KHOẢNG TRỐNG: đã gán F8 " + PointDescription(shortcutSettings_.mainGapClick) + L" • không gắn điều kiện UI.");
-            capturePid_ = 0;
-            return;
-        }
 
         const bool hasMode = partyBuildCaptureIndex_ >= 0 || shortcutPostTradeCapture_ || shortcutKunlunCaptureIndex_ >= 0 ||
                              (shortcutTravelExitCaptureGroup_ >= 0 && shortcutTravelExitCaptureIndex_ >= 0) || captureSlot_ != ClickSlot::None ||
@@ -12635,7 +12476,6 @@ private:
                 break;
             case WM_TIMER:
                 if (wp == kRecordTimer) { PollRecorder(); return 0; }
-                if (wp == kMainGapClickTimer) { if (!globalPaused_) TickMainGapClick(GetTickCount()); return 0; }
                 if (wp == kMainMacroSellTimer) { if (!globalPaused_) TickActiveMainMacroSell(); return 0; }
                 if (wp == kTradeSabotageGuardTimer) { if (!globalPaused_) TickGlobalTradeSabotageGuard(); return 0; }
                 if (wp == kTimer) Tick();
@@ -12818,18 +12658,10 @@ private:
     HWND shortcutPostTradePointLabel_ = nullptr;
     HWND shortcutPostTradeDelay_ = nullptr;
     HWND shortcutPostTradeRepeat_ = nullptr;
-    HWND shortcutMainGapEnabled_ = nullptr;
-    HWND shortcutMainGapPointLabel_ = nullptr;
-    HWND shortcutMainGapTime_ = nullptr;
-    HWND shortcutMainGapDelay_ = nullptr;
     int shortcutKunlunCaptureIndex_ = -1;
     int shortcutTravelExitCaptureGroup_ = -1;
     int shortcutTravelExitCaptureIndex_ = -1;
     bool shortcutPostTradeCapture_ = false;
-    bool shortcutMainGapCapture_ = false;
-    bool mainGapClickArmed_ = false;
-    DWORD mainGapClickNextTick_ = 0;
-    bool mainGapClickErrorLatched_ = false;
     HBRUSH shortcutDarkBrush_ = nullptr;
 
     // Telegram observer/output subsystem; bound-gold reporting remains read-only.
