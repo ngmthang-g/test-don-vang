@@ -80,13 +80,14 @@ add_executable(auto_loot_logic_tests src/auto_loot_logic_test.cpp)
 add_executable(pk_tl_lm_logic_tests src/pk_tl_lm_logic_test.cpp)
 add_executable(travel_network_logic_tests src/travel_network_logic_test.cpp)
 add_executable(integration_hardening_logic_tests src/integration_hardening_logic_test.cpp)
+add_executable(auto_role_logic_tests src/auto_role_logic_test.cpp)
 
 set(TL_TEST_TARGETS
     route_logic_tests trade_coordinator_logic_tests background_ui_logic_tests fixed_slot_sell_logic_tests
     unity_geometry_logic_tests internal_ui_click_logic_tests travel_fight_guard_logic_tests auto_fight_retry_logic_tests
     telegram_logic_tests gold_history_store_tests automation_bulk_logic_tests party_build_logic_tests equip_point_db_tests bag_filter_v2_logic_tests
     main_semantic_sell_logic_tests main_macro_sell_logic_tests trade_quota_v18_logic_tests con_filter_nosleep_logic_tests
-    sell_filter_grid_v2_logic_tests auto_loot_logic_tests pk_tl_lm_logic_tests travel_network_logic_tests integration_hardening_logic_tests)
+    sell_filter_grid_v2_logic_tests auto_loot_logic_tests pk_tl_lm_logic_tests travel_network_logic_tests integration_hardening_logic_tests auto_role_logic_tests)
 foreach(t IN LISTS TL_TEST_TARGETS)
     target_include_directories(${t} PRIVATE src)
 endforeach()
