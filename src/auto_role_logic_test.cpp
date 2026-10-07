@@ -29,6 +29,14 @@ int main() {
     std::vector<ClientKey> reversed(a.rbegin(), a.rend());
     Check(RolesByPid(reversed) == r, "rescan:deterministic-independent-of-scan-order");
 
+    // R03: move MAIN designation to another client. The old MAIN must
+    // re-enter the deterministic CON pool and numbering must be rebuilt cleanly.
+    for (auto& c : a) c.designatedMain = (c.pid == 30);
+    const auto switched = RolesByPid(a);
+    Check(switched.at(30) == 1 && switched.at(10) == 2 &&
+          switched.at(20) == 3 && switched.at(5) == 4,
+          "switch-main:old-main-returns-to-renumbered-con-pool");
+
     for (auto& c : a) c.designatedMain = false;
     r = RolesByPid(a);
     bool noMain = true;
@@ -53,6 +61,6 @@ int main() {
     }
     Check(manyRoles[0] == 1 && slots == 30 && overflow == 1, ">30:overflow-fail-safe");
 
-    std::printf("RESULT %d/6 PASS\n", 6 - g_fail);
+    std::printf("RESULT %d/7 PASS\n", 7 - g_fail);
     return g_fail ? 1 : 0;
 }
