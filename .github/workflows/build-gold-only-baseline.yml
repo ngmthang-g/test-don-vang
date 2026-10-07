@@ -1,0 +1,105 @@
+name: Gold-only 10.6 baseline build
+
+on:
+  push:
+    branches:
+      - refactor/gold-only-cleanup
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: 'utf-8'
+
+jobs:
+  windows-x64-release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout cleanup branch
+        uses: actions/checkout@v4
+
+      - name: Configure Windows x64 Release
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A x64
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
+
+      - name: Build Windows x64 Release
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { throw 'Release build failed' }
+
+          $required = @(
+            'build/Release/CongCuHoTroGameRanhTay_10.6.exe',
+            'build/Release/ThanLongCleanRouteBridge.dll'
+          )
+          foreach ($p in $required) {
+            if (!(Test-Path $p)) { throw "Missing release binary: $p" }
+          }
+
+      - name: Run native regression tests
+        shell: pwsh
+        run: |
+          $tests = @(
+            'route_logic_tests',
+            'trade_coordinator_logic_tests',
+            'background_ui_logic_tests',
+            'fixed_slot_sell_logic_tests',
+            'unity_geometry_logic_tests',
+            'internal_ui_click_logic_tests',
+            'travel_fight_guard_logic_tests',
+            'auto_fight_retry_logic_tests',
+            'telegram_logic_tests',
+            'gold_history_store_tests',
+            'automation_bulk_logic_tests',
+            'party_build_logic_tests',
+            'equip_point_db_tests',
+            'bag_filter_v2_logic_tests',
+            'main_semantic_sell_logic_tests',
+            'main_macro_sell_logic_tests',
+            'trade_quota_v18_logic_tests',
+            'con_filter_nosleep_logic_tests',
+            'sell_filter_grid_v2_logic_tests',
+            'auto_loot_logic_tests',
+            'pk_tl_lm_logic_tests',
+            'travel_network_logic_tests',
+            'integration_hardening_logic_tests'
+          )
+
+          foreach ($t in $tests) {
+            $exe = "build/Release/$t.exe"
+            if (!(Test-Path $exe)) { throw "Missing test executable: $t" }
+            & $exe
+            if ($LASTEXITCODE -ne 0) { throw "Native test failed: $t" }
+          }
+          Write-Host "Native tests PASS: $($tests.Count)/$($tests.Count)"
+
+      - name: Prepare downloadable package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item 'build/Release/CongCuHoTroGameRanhTay_10.6.exe' artifact/
+          Copy-Item 'build/Release/ThanLongCleanRouteBridge.dll' artifact/
+
+          $rows = @()
+          foreach ($p in @(
+            'artifact/CongCuHoTroGameRanhTay_10.6.exe',
+            'artifact/ThanLongCleanRouteBridge.dll'
+          )) {
+            $h = Get-FileHash -Algorithm SHA256 $p
+            $rows += "$($h.Hash.ToLower())  $([System.IO.Path]::GetFileName($p))"
+          }
+          Set-Content -Encoding ascii artifact/SHA256SUMS.txt $rows
+
+      - name: Upload EXE and DLL
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-only-10.6-win-x64-${{ github.sha }}
+          path: artifact/*
+          if-no-files-found: error
+          retention-days: 30
