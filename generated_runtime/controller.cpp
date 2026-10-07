@@ -236,7 +236,6 @@ constexpr int IDC_PB_DELAY_FACE = 234;
 constexpr int IDC_PB_TARGET_RETRY = 235;
 constexpr int IDC_PB_INVITE_RETRY = 236;
 constexpr int IDC_CLEAR_LOG = 237;
-constexpr int IDC_TEST_OPEN_BAG = 5000; // TEST-ONLY semantic open bag probe
 // Shortcut settings secondary window. 630-699 is isolated from inventory/Telegram IDs.
 constexpr int IDC_SC_THEME = 630;
 constexpr int IDC_SC_KUNLUN_X = 631;
@@ -2672,9 +2671,6 @@ private:
         enableTrainPk_ = Make(L"BUTTON", L"Auto PK", BS_AUTOCHECKBOX, 750, 436, 78, 24, IDC_ENABLE_TRAIN_PK); addFont(enableTrainPk_);
         enableTreatment_ = Make(L"BUTTON", L"Trị liệu", BS_AUTOCHECKBOX, 832, 436, 82, 24, IDC_ENABLE_TREATMENT); addFont(enableTreatment_);
         enableAlliancePk_ = Make(L"BUTTON", L"PK LM", BS_AUTOCHECKBOX, 918, 436, 82, 24, IDC_ENABLE_ALLIANCE_PK); addFont(enableAlliancePk_);
-        testOpenBagButton_ = Make(L"BUTTON", L"TEST PROBE TAY NẢI • KHÔNG CLICK", BS_PUSHBUTTON, 18, 112, 290, 30, IDC_TEST_OPEN_BAG); addFont(testOpenBagButton_);
-        if (testOpenBagButton_) ShowWindow(testOpenBagButton_, SW_HIDE);
-
         addFont(Make(L"STATIC", L"NPC BÁN:", SS_LEFT | SS_CENTERIMAGE, 18, 472, 62, 27, 0));
         sellNpcCombo_ = Make(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_VSCROLL, 82, 468, 465, 260, IDC_SELL_NPC); addFont(sellNpcCombo_);
         for (const auto& npc : kSellNpcs)
@@ -2781,7 +2777,7 @@ private:
         lootOutput_ = Make(L"EDIT", L"Chọn ACC rồi bấm SCAN QUANH ACC.", WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_VSCROLL,
                            32, 482, 975, 100, IDC_LOOT_OUTPUT); addFont(lootOutput_);
 
-        developerControls_ = {testOpenBagButton_, shortcutSettingsButton_, bagScanButton_, exportLogButton_,
+        developerControls_ = {shortcutSettingsButton_, bagScanButton_, exportLogButton_,
                               autoLootGroup_, autoLootToggleButton_, autoLootIntervalLabel_, autoLootIntervalEdit_,
                               lootProbeGroup_, lootScanButton_, lootPickButton_, lootOutput_};
         developerControls_.insert(developerControls_.end(), partyBuildDevControls_.begin(), partyBuildDevControls_.end());
@@ -9500,26 +9496,6 @@ private:
         return true;
     }
 
-    // TEST-ONLY: read-only proof; tuyệt đối không gọi semantic để mở tay nải.
-    void TestOpenBag() {
-        Account* a = SelectedAccount();
-        if (!a) { Log(L"TEST TAY NẢI: chưa chọn acc"); return; }
-        std::wstring attachError;
-        if (!EnsureAttach(*a, attachError)) {
-            LogAccount(*a, L"TEST TAY NẢI: không attach được Bridge • " + attachError);
-            return;
-        }
-
-        Response verifyResponse{};
-        std::wstring verifyError;
-        if (a->bridge.Call(Command::TestOpenBag, 1, 0, 0,
-                           verifyResponse, verifyError, 1200)) {
-            LogAccount(*a, L"TEST TAY NẢI PROBE • " + std::wstring(verifyResponse.detail));
-        } else {
-            LogAccount(*a, L"TEST TAY NẢI PROBE FAIL • " + verifyError);
-        }
-    }
-
     void TestClick(ClickSlot slot) {
         Account* a = SelectedAccount();
         if (!a) { Log(L"TEST: chưa chọn acc"); return; }
@@ -12603,9 +12579,6 @@ private:
                     case IDC_CAPTURE_ALLIANCE_PK:
                         if (HIWORD(wp) == BN_CLICKED) BeginCapture(ClickSlot::AlliancePk1);
                         break;
-                    case IDC_TEST_OPEN_BAG:
-                        TestOpenBag();
-                        break;
                     case IDC_TEST_AUTO:
                         TestClick(ClickSlot::AutoMenu);
                         break;
@@ -12786,7 +12759,6 @@ private:
     HWND mainLogToggleButton_ = nullptr;
     bool mainLogEnabled_ = ReadIniInt(L"UiPerformance", L"MainLogEnabled", 0) != 0;
     HWND exportLogButton_ = nullptr;
-    HWND testOpenBagButton_ = nullptr;
     HWND imageScanButton_ = nullptr;
     HWND filterMode2Button_ = nullptr;
     HWND bagScanButton_ = nullptr;
