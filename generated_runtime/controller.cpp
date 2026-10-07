@@ -74,8 +74,6 @@ constexpr wchar_t kGameModule[] = L"GameAssembly.dll";
 constexpr UINT_PTR kTimer = 1;
 constexpr UINT_PTR kMainMacroSellTimer = 4;
 constexpr UINT kMainMacroSellTimerMs = 10;
-constexpr UINT_PTR kTradeSabotageGuardTimer = 5;
-constexpr UINT kTradeSabotageGuardTimerMs = 50;
 constexpr int IDC_MAIN_MACRO_SELL_X = 5901;
 constexpr int IDC_MAIN_MACRO_SELL_Y = 5902;
 constexpr int IDC_MAIN_MACRO_SELL_CAPTURE = 5903;
@@ -85,8 +83,6 @@ constexpr int IDC_MAIN_MACRO_SELL_DELAY = 5906;
 constexpr int IDC_MAIN_MACRO_SELL_SAVE = 5907;
 constexpr int IDC_MAIN_MACRO_SELL_STATUS = 5908;
 constexpr int IDC_MAIN_MACRO_SELL_CLOSE = 5909;
-constexpr int IDC_MAIN_MACRO_SELL_WAY2 = 5910;
-constexpr int IDC_MAIN_MACRO_SELL_CANCEL_SABOTAGE = 5911;
 constexpr UINT_PTR kRecordTimer = 2;
 constexpr int kCaptureHotkeyId = 9001;
 constexpr int kPauseHotkeyId = 9002;
@@ -1944,19 +1940,14 @@ private:
 struct MainMacroSellConfig {
     ClickPoint point{};
     int delayMs = 600;
-    bool way2SemanticSell = false;
-    bool cancelSabotageTrade = false; // global MAIN guard: drain exact trade-request "Hủy bỏ" continuously except immediate CON-invite -> MAIN-confirm step
 };
 
 struct MainMacroSellRuntime {
-    enum class Phase : int { Idle=0, Scan=1, Clicking=2, SemanticSell=3, RefreshCapacity=4, Blocked=5 };
+    enum class Phase : int { Idle=0, Scan=1, Clicking=2, RefreshCapacity=3, Blocked=4 };
     Phase phase = Phase::Idle;
     int targetClicks = 0;
     int doneClicks = 0;
     DWORD nextTick = 0;
-    int retryCount = 0;
-    DWORD semanticStartedTick = 0;
-    DWORD semanticNextTick = 0;
     bool idleSweep = false;
     int blockedFree = -1;
 };
@@ -2816,7 +2807,6 @@ private:
         }
         Log(L"HIDDEN ACTION ENGINE ON • auto-click dùng InputSync nội bộ; không chiếm chuột Windows.");
         SetTimer(hwnd_, kTimer, 250, nullptr);
-        SetTimer(hwnd_, kTradeSabotageGuardTimer, kTradeSabotageGuardTimerMs, nullptr);
         RefreshLicenseTitle();
         UpdateTradeRendezvousLabel();
         UpdateRoleActionButtons();
@@ -7438,8 +7428,6 @@ private:
             cfg.point.baseW=ReadIniInt(sec,L"MainMacroSellW",0); cfg.point.baseH=ReadIniInt(sec,L"MainMacroSellH",0);
             cfg.point.valid=cfg.point.x>=0&&cfg.point.y>=0&&cfg.point.baseW>0&&cfg.point.baseH>0;
             cfg.delayMs=ClampMainMacroDelay(ReadIniInt(sec,L"MainMacroSellDelay",600));
-            cfg.way2SemanticSell=ReadIniInt(sec,L"MainMacroSellWay2",0)!=0;
-            cfg.cancelSabotageTrade=ReadIniInt(sec,L"MainMacroSellCancelSabotage",0)!=0;
             return true;
         }
         if(!allowMigration)return true;
@@ -7463,7 +7451,7 @@ private:
         const std::wstring&sec=main.profile.section; WriteIniInt(sec,L"MainMacroSellConfigured",1);
         WriteIniInt(sec,L"MainMacroSellX",cfg.point.valid?cfg.point.x:-1); WriteIniInt(sec,L"MainMacroSellY",cfg.point.valid?cfg.point.y:-1);
         WriteIniInt(sec,L"MainMacroSellW",cfg.point.valid?cfg.point.baseW:0); WriteIniInt(sec,L"MainMacroSellH",cfg.point.valid?cfg.point.baseH:0);
-        WriteIniInt(sec,L"MainMacroSellDelay",ClampMainMacroDelay(cfg.delayMs)); WriteIniInt(sec,L"MainMacroSellWay2",cfg.way2SemanticSell?1:0); WriteIniInt(sec,L"MainMacroSellCancelSabotage",cfg.cancelSabotageTrade?1:0); FlushIni();
+        WriteIniInt(sec,L"MainMacroSellDelay",ClampMainMacroDelay(cfg.delayMs)); FlushIni();
     }
     bool CaptureCursorForMain(Account&a,ClickPoint&p){POINT q{};if(!GetCursorPos(&q)||!ScreenToClient(a.game.window,&q))return false;RECT r{};if(!GetClientRect(a.game.window,&r)||r.right<=0||r.bottom<=0)return false;p={q.x,q.y,r.right-r.left,r.bottom-r.top,true};return q.x>=0&&q.y>=0&&q.x<r.right&&q.y<r.bottom;}
     void MainSellDialogStatus(const std::wstring&t){if(mainMacroSellStatus_)SetWindowTextW(mainMacroSellStatus_,t.c_str());}
@@ -7472,25 +7460,17 @@ private:
         if(mainMacroSellXEdit_)SetWindowTextW(mainMacroSellXEdit_,mainMacroSellDialogConfig_.point.valid?std::to_wstring(mainMacroSellDialogConfig_.point.x).c_str():L"");
         if(mainMacroSellYEdit_)SetWindowTextW(mainMacroSellYEdit_,mainMacroSellDialogConfig_.point.valid?std::to_wstring(mainMacroSellDialogConfig_.point.y).c_str():L"");
         if(mainMacroSellDelayEdit_)SetWindowTextW(mainMacroSellDelayEdit_,std::to_wstring(mainMacroSellDialogConfig_.delayMs).c_str());
-        const bool mainRole=a->profile.tradeRole==kMainTradeRole;
-        if(mainMacroSellWay2Check_){SendMessageW(mainMacroSellWay2Check_,BM_SETCHECK,mainRole&&mainMacroSellDialogConfig_.way2SemanticSell?BST_CHECKED:BST_UNCHECKED,0);EnableWindow(mainMacroSellWay2Check_,mainRole?TRUE:FALSE);}
-        if(mainMacroSellCancelSabotageCheck_){SendMessageW(mainMacroSellCancelSabotageCheck_,BM_SETCHECK,mainRole&&mainMacroSellDialogConfig_.cancelSabotageTrade?BST_CHECKED:BST_UNCHECKED,0);EnableWindow(mainMacroSellCancelSabotageCheck_,mainRole?TRUE:FALSE);}
         if(mainMacroSellPointLabel_){const std::wstring t=mainMacroSellDialogConfig_.point.valid?PointDescription(mainMacroSellDialogConfig_.point):L"CHƯA LẤY TỌA";SetWindowTextW(mainMacroSellPointLabel_,t.c_str());}
     }
     bool SaveMainMacroSellUi(){
         Account*a=AccountByPid(mainMacroSellDialogPid_);if(!a){MainSellDialogStatus(L"acc không còn tồn tại");return false;}
         wchar_t bx[32]{},by[32]{},bd[32]{};GetWindowTextW(mainMacroSellXEdit_,bx,_countof(bx));GetWindowTextW(mainMacroSellYEdit_,by,_countof(by));GetWindowTextW(mainMacroSellDelayEdit_,bd,_countof(bd));
         MainMacroSellConfig cfg=mainMacroSellDialogConfig_;cfg.delayMs=ClampMainMacroDelay(_wtoi(bd));
-        if(a->profile.tradeRole==kMainTradeRole){
-            cfg.way2SemanticSell=mainMacroSellWay2Check_&&SendMessageW(mainMacroSellWay2Check_,BM_GETCHECK,0,0)==BST_CHECKED;
-            cfg.cancelSabotageTrade=mainMacroSellCancelSabotageCheck_&&SendMessageW(mainMacroSellCancelSabotageCheck_,BM_GETCHECK,0,0)==BST_CHECKED;
-        }
         if(bx[0]&&by[0]){RECT rc{};if(!GetClientRect(a->game.window,&rc)||rc.right<=0||rc.bottom<=0){MainSellDialogStatus(L"không đọc được client acc");return false;}const int x=_wtoi(bx),y=_wtoi(by);if(x<0||y<0||x>=rc.right||y>=rc.bottom){MainSellDialogStatus(L"X/Y ngoài client acc");return false;}cfg.point={x,y,rc.right,rc.bottom,true};}
         mainMacroSellDialogConfig_=cfg;SaveMainMacroSellConfig(*a,cfg);
-        if(a->profile.tradeRole==kMainTradeRole){mainSabotageGuardPid_=a->game.pid;mainSabotageGuardEnabled_=cfg.cancelSabotageTrade;}
         if(a->runtime.sellPhase==3&&a->macroSell.phase==MainMacroSellRuntime::Phase::Blocked&&MainMacroPointValid(cfg.point)){a->macroSell=MainMacroSellRuntime{};a->runtime.sellPhase=0;idleSellEpochDone_=false;}RefreshMainMacroSellUi();
         if(a->profile.tradeRole==0)MainSellDialogStatus(L"ĐÃ LƯU NONE • delay="+std::to_wstring(cfg.delayMs)+L"ms • seller độc lập 3.6");
-        else MainSellDialogStatus(L"ĐÃ LƯU • delay="+std::to_wstring(cfg.delayMs)+L"ms • CÁCH BÁN 2="+(cfg.way2SemanticSell?std::wstring(L"ON"):std::wstring(L"OFF"))+L" • HỦY PHÁ HOẠI="+(cfg.cancelSabotageTrade?std::wstring(L"ON"):std::wstring(L"OFF")));return true;
+        else MainSellDialogStatus(L"ĐÃ LƯU • MAIN bán Cách 1 raw click • delay="+std::to_wstring(cfg.delayMs)+L"ms");return true;
     }
     void BeginMainMacroSellCapture(){Account*a=AccountByPid(mainMacroSellDialogPid_);if(!a){MainSellDialogStatus(L"acc không còn tồn tại");return;}mainMacroSellCaptureActive_=true;mainMacroSellCapturePid_=a->game.pid;MainSellDialogStatus(L"ARM F8 • đưa chuột vào đúng TỌA MACRO BÁN trong acc");}
     void CaptureMainMacroSellF8(){if(!mainMacroSellCaptureActive_)return;Account*a=AccountByPid(mainMacroSellCapturePid_);if(!a){mainMacroSellCaptureActive_=false;MainSellDialogStatus(L"F8 FAIL • acc mất");return;}ClickPoint p{};if(!CaptureCursorForMain(*a,p)){MainSellDialogStatus(L"F8: chuột phải nằm trong client acc");return;}mainMacroSellCaptureActive_=false;mainMacroSellDialogConfig_.point=p;SaveMainMacroSellConfig(*a,mainMacroSellDialogConfig_);if(a->runtime.sellPhase==3&&a->macroSell.phase==MainMacroSellRuntime::Phase::Blocked){a->macroSell=MainMacroSellRuntime{};a->runtime.sellPhase=0;idleSellEpochDone_=false;}RefreshMainMacroSellUi();MainSellDialogStatus(L"F8 PASS • đã lưu TỌA MACRO BÁN");}
@@ -7498,11 +7478,11 @@ private:
     void TestMainMacroSellClick(){Account*a=AccountByPid(mainMacroSellDialogPid_);if(!a){MainSellDialogStatus(L"acc không còn tồn tại");return;}if(!SaveMainMacroSellUi())return;if(!MainMacroPointValid(mainMacroSellDialogConfig_.point)){MainSellDialogStatus(L"CHƯA CÓ TỌA MACRO BÁN");return;}std::wstring e;if(!MainMacroSellClick(*a,mainMacroSellDialogConfig_.point,e)){MainSellDialogStatus(L"TEST FAIL • "+e);return;}MainSellDialogStatus(L"TEST PASS • đã gửi đúng 1 click macro");}
     void ClearMainMacroSellPoint(){Account*a=AccountByPid(mainMacroSellDialogPid_);if(!a)return;mainMacroSellDialogConfig_.point={};SaveMainMacroSellConfig(*a,mainMacroSellDialogConfig_);RefreshMainMacroSellUi();MainSellDialogStatus(L"ĐÃ XÓA TỌA • delay vẫn giữ");}
     static LRESULT CALLBACK MainSellSettingsWndProc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){App*self=reinterpret_cast<App*>(GetWindowLongPtrW(hwnd,GWLP_USERDATA));if(msg==WM_NCCREATE){auto*cs=reinterpret_cast<CREATESTRUCTW*>(lp);self=reinterpret_cast<App*>(cs->lpCreateParams);SetWindowLongPtrW(hwnd,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(self));}return self?self->HandleMainSellSettingsWindow(hwnd,msg,wp,lp):DefWindowProcW(hwnd,msg,wp,lp);}
-    LRESULT HandleMainSellSettingsWindow(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){(void)lp;if(msg==WM_COMMAND){switch(LOWORD(wp)){case IDC_MAIN_MACRO_SELL_CAPTURE:if(HIWORD(wp)==BN_CLICKED)BeginMainMacroSellCapture();return 0;case IDC_MAIN_MACRO_SELL_TEST:if(HIWORD(wp)==BN_CLICKED)TestMainMacroSellClick();return 0;case IDC_MAIN_MACRO_SELL_CLEAR:if(HIWORD(wp)==BN_CLICKED)ClearMainMacroSellPoint();return 0;case IDC_MAIN_MACRO_SELL_SAVE:if(HIWORD(wp)==BN_CLICKED)SaveMainMacroSellUi();return 0;case IDC_MAIN_MACRO_SELL_CLOSE:DestroyWindow(hwnd);return 0;}}if(msg==WM_CLOSE){mainMacroSellCaptureActive_=false;DestroyWindow(hwnd);return 0;}if(msg==WM_NCDESTROY){if(mainSellSettingsWindow_==hwnd)mainSellSettingsWindow_=nullptr;mainMacroSellXEdit_=mainMacroSellYEdit_=mainMacroSellDelayEdit_=mainMacroSellPointLabel_=mainMacroSellStatus_=mainMacroSellWay2Check_=mainMacroSellCancelSabotageCheck_=nullptr;return DefWindowProcW(hwnd,msg,wp,lp);}return DefWindowProcW(hwnd,msg,wp,lp);}
+    LRESULT HandleMainSellSettingsWindow(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){(void)lp;if(msg==WM_COMMAND){switch(LOWORD(wp)){case IDC_MAIN_MACRO_SELL_CAPTURE:if(HIWORD(wp)==BN_CLICKED)BeginMainMacroSellCapture();return 0;case IDC_MAIN_MACRO_SELL_TEST:if(HIWORD(wp)==BN_CLICKED)TestMainMacroSellClick();return 0;case IDC_MAIN_MACRO_SELL_CLEAR:if(HIWORD(wp)==BN_CLICKED)ClearMainMacroSellPoint();return 0;case IDC_MAIN_MACRO_SELL_SAVE:if(HIWORD(wp)==BN_CLICKED)SaveMainMacroSellUi();return 0;case IDC_MAIN_MACRO_SELL_CLOSE:DestroyWindow(hwnd);return 0;}}if(msg==WM_CLOSE){mainMacroSellCaptureActive_=false;DestroyWindow(hwnd);return 0;}if(msg==WM_NCDESTROY){if(mainSellSettingsWindow_==hwnd)mainSellSettingsWindow_=nullptr;mainMacroSellXEdit_=mainMacroSellYEdit_=mainMacroSellDelayEdit_=mainMacroSellPointLabel_=mainMacroSellStatus_=nullptr;return DefWindowProcW(hwnd,msg,wp,lp);}return DefWindowProcW(hwnd,msg,wp,lp);}
     void OpenMainSellSettingsDialog(){
         Account*a=SelectedAccount();if(!a||(a->profile.tradeRole!=0&&a->profile.tradeRole!=kMainTradeRole)){Log(L"TÙY CHỈNH BÁN chỉ áp dụng acc NONE hoặc MAIN.");return;}mainMacroSellDialogPid_=a->game.pid;
         const wchar_t* sellDialogTitle = a->profile.tradeRole==0 ? L"TÙY CHỈNH BÁN • ACC NONE • 3.6" : L"TÙY CHỈNH BÁN • MAIN MACRO COUNT-DRIVEN";
-        if(mainSellSettingsWindow_&&IsWindow(mainSellSettingsWindow_)){SetWindowTextW(mainSellSettingsWindow_,sellDialogTitle);ShowWindow(mainSellSettingsWindow_,SW_SHOW);SetForegroundWindow(mainSellSettingsWindow_);RefreshMainMacroSellUi();MainSellDialogStatus(a->profile.tradeRole==0?L"NONE • tọa ô trang bị cố định + delay; seller 3.6 tự đi NPC/bán/verify/quay bãi":L"COUNT-DRIVEN • CÁCH BÁN 2 OFF=raw cũ; ON=raw click → semantic BÁN");return;}
+        if(mainSellSettingsWindow_&&IsWindow(mainSellSettingsWindow_)){SetWindowTextW(mainSellSettingsWindow_,sellDialogTitle);ShowWindow(mainSellSettingsWindow_,SW_SHOW);SetForegroundWindow(mainSellSettingsWindow_);RefreshMainMacroSellUi();MainSellDialogStatus(a->profile.tradeRole==0?L"NONE • tọa ô trang bị cố định + delay; seller 3.6 tự đi NPC/bán/verify/quay bãi":L"COUNT-DRIVEN • MAIN bán Cách 1 raw click");return;}
         WNDCLASSEXW wc{};wc.cbSize=sizeof(wc);wc.lpfnWndProc=MainSellSettingsWndProc;wc.hInstance=instance_;wc.hCursor=LoadCursor(nullptr,IDC_ARROW);wc.hbrBackground=reinterpret_cast<HBRUSH>(COLOR_WINDOW+1);wc.lpszClassName=L"ThanLongMainMacroSellV18";
         if(!RegisterClassExW(&wc)&&GetLastError()!=ERROR_CLASS_ALREADY_EXISTS){Log(L"Không tạo được class TÙY CHỈNH BÁN");return;}
         mainSellSettingsWindow_=CreateWindowExW(WS_EX_TOOLWINDOW,wc.lpszClassName,sellDialogTitle,WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU,CW_USEDEFAULT,CW_USEDEFAULT,650,440,hwnd_,nullptr,instance_,this);if(!mainSellSettingsWindow_)return;
@@ -7511,12 +7491,9 @@ private:
         mk(L"STATIC",L"X",SS_CENTER|SS_CENTERIMAGE,18,94,25,28,0);mainMacroSellXEdit_=mk(L"EDIT",L"",WS_BORDER|ES_NUMBER|ES_CENTER,48,94,85,28,IDC_MAIN_MACRO_SELL_X);mk(L"STATIC",L"Y",SS_CENTER|SS_CENTERIMAGE,142,94,25,28,0);mainMacroSellYEdit_=mk(L"EDIT",L"",WS_BORDER|ES_NUMBER|ES_CENTER,172,94,85,28,IDC_MAIN_MACRO_SELL_Y);
         mk(L"BUTTON",L"LẤY TỌA F8",BS_PUSHBUTTON,275,94,150,28,IDC_MAIN_MACRO_SELL_CAPTURE);mk(L"BUTTON",L"TEST 1 CLICK",BS_PUSHBUTTON,435,94,115,28,IDC_MAIN_MACRO_SELL_TEST);mk(L"BUTTON",L"XÓA TỌA",BS_PUSHBUTTON,558,94,60,28,IDC_MAIN_MACRO_SELL_CLEAR);
         mk(L"STATIC",L"TIME GIỮA 2 CLICK BÁN (ms)",SS_LEFT|SS_CENTERIMAGE,18,142,230,28,0);mainMacroSellDelayEdit_=mk(L"EDIT",L"600",WS_BORDER|ES_NUMBER|ES_CENTER,258,142,95,28,IDC_MAIN_MACRO_SELL_DELAY);mk(L"STATIC",L"scheduler non-blocking • không còn Repeat",SS_LEFT|SS_CENTERIMAGE,365,142,253,28,0);
-        mainMacroSellWay2Check_=mk(L"BUTTON",L"CÁCH BÁN 2 • sau mỗi click gọi semantic BÁN",BS_AUTOCHECKBOX,18,180,440,30,IDC_MAIN_MACRO_SELL_WAY2);
-        mainMacroSellCancelSabotageCheck_=mk(L"BUTTON",L"Hủy giao dịch Phá hoại",BS_AUTOCHECKBOX,18,212,300,30,IDC_MAIN_MACRO_SELL_CANCEL_SABOTAGE);
-        mk(L"STATIC",L"Bật: MAIN quét Hủy bỏ toàn thời gian; chỉ nhường đúng bước CON vừa mời → MAIN Xác nhận.",SS_LEFT|SS_CENTERIMAGE,320,212,298,30,0);
-        mk(L"STATIC",L"Điều kiện item: TRANG BỊ + KHÔNG KHÓA. Scan MAIN đúng 1 lượt / sell episode.",SS_LEFT|SS_CENTERIMAGE,18,248,600,28,0);
-        mainMacroSellStatus_=mk(L"STATIC",L"",SS_LEFT|SS_CENTERIMAGE|WS_BORDER,18,284,600,45,IDC_MAIN_MACRO_SELL_STATUS);mk(L"BUTTON",L"LƯU",BS_DEFPUSHBUTTON,395,346,100,30,IDC_MAIN_MACRO_SELL_SAVE);mk(L"BUTTON",L"ĐÓNG",BS_PUSHBUTTON,510,346,108,30,IDC_MAIN_MACRO_SELL_CLOSE);
-        LoadMainMacroSellConfig(*a,mainMacroSellDialogConfig_,true);RefreshMainMacroSellUi();MainSellDialogStatus(a->profile.tradeRole==0?L"NONE • tọa ô trang bị cố định + delay; seller 3.6 tự đi NPC/bán/verify/quay bãi":L"COUNT-DRIVEN • CÁCH BÁN 2 OFF=raw cũ; ON=raw click → semantic BÁN");ShowWindow(mainSellSettingsWindow_,SW_SHOW);UpdateWindow(mainSellSettingsWindow_);
+        mk(L"STATIC",L"MAIN bán Cách 1: TRANG BỊ + KHÔNG KHÓA • scan đúng 1 lượt / sell episode.",SS_LEFT|SS_CENTERIMAGE,18,188,600,28,0);
+        mainMacroSellStatus_=mk(L"STATIC",L"",SS_LEFT|SS_CENTERIMAGE|WS_BORDER,18,226,600,45,IDC_MAIN_MACRO_SELL_STATUS);mk(L"BUTTON",L"LƯU",BS_DEFPUSHBUTTON,395,286,100,30,IDC_MAIN_MACRO_SELL_SAVE);mk(L"BUTTON",L"ĐÓNG",BS_PUSHBUTTON,510,286,108,30,IDC_MAIN_MACRO_SELL_CLOSE);
+        LoadMainMacroSellConfig(*a,mainMacroSellDialogConfig_,true);RefreshMainMacroSellUi();MainSellDialogStatus(a->profile.tradeRole==0?L"NONE • tọa ô trang bị cố định + delay; seller 3.6 tự đi NPC/bán/verify/quay bãi":L"COUNT-DRIVEN • MAIN bán Cách 1 raw click");ShowWindow(mainSellSettingsWindow_,SW_SHOW);UpdateWindow(mainSellSettingsWindow_);
     }
     void ToggleMainSellSettings(){OpenMainSellSettingsDialog();}
 
@@ -7563,7 +7540,7 @@ private:
     void BlockMainMacroSell(Account&main,const std::wstring&why){auto&rt=main.macroSell;rt.phase=MainMacroSellRuntime::Phase::Blocked;rt.blockedFree=main.snapshotValid?main.snapshot.freeBagSpace:-1;main.runtime.sellPhase=3;KillTimer(hwnd_,kMainMacroSellTimer);activeMainMacroSellPid_=0;main.runtime.status=L"MAIN SELL BLOCKED • "+why;ReportSellBlockOnce(main,60,why);}
     bool BeginMainMacroSell(Account&main,bool idleSweep=false){
         if(!TradeAccountAtRendezvous(main)){BlockMainMacroSell(main,L"MAIN không đứng đúng TỌA GD");return false;}MainMacroSellConfig cfg{};LoadMainMacroSellConfig(main,cfg,true);if(!MainMacroPointValid(cfg.point)){BlockMainMacroSell(main,L"chưa có TỌA MACRO BÁN • vào TÙY CHỈNH BÁN và F8");return false;}
-        mainMacroSellActiveConfig_=cfg;mainSabotageGuardPid_=main.game.pid;mainSabotageGuardEnabled_=cfg.cancelSabotageTrade;main.macroSell=MainMacroSellRuntime{};main.macroSell.phase=MainMacroSellRuntime::Phase::Scan;main.macroSell.idleSweep=idleSweep;main.runtime.sellPhase=1;main.runtime.sellBlockReportCode=0;activeMainMacroSellPid_=main.game.pid;
+        mainMacroSellActiveConfig_=cfg;main.macroSell=MainMacroSellRuntime{};main.macroSell.phase=MainMacroSellRuntime::Phase::Scan;main.macroSell.idleSweep=idleSweep;main.runtime.sellPhase=1;main.runtime.sellBlockReportCode=0;activeMainMacroSellPid_=main.game.pid;
         if(tradeTxn_.phase!=TradePhase::Idle){activeMainSellContextChildPid_=tradeTxn_.childPid;activeMainSellContextPass_=tradeTxn_.sequencePass;}else{Account*next=EarliestQueuedChild();activeMainSellContextChildPid_=next?next->game.pid:0;activeMainSellContextPass_=1;}
         if(!SetTimer(hwnd_,kMainMacroSellTimer,kMainMacroSellTimerMs,nullptr)){BlockMainMacroSell(main,L"không tạo được seller timer");return false;}
         LogAccount(main,(idleSweep?L"IDLE SELL SWEEP START":L"MAIN QUOTA=0 • SELL START")+std::wstring(L" • scan 1 lượt • predicate=isEquip&&!bound • 1 tọa macro • delay=")+std::to_wstring(cfg.delayMs)+L"ms");return true;
@@ -7584,26 +7561,8 @@ private:
         if(rt.phase==MainMacroSellRuntime::Phase::Clicking){
             if(rt.nextTick!=0&&static_cast<LONG>(now-rt.nextTick)<0)return;
             if(!MainSellClickPhaseAllowed()){rt.nextTick=now+50;main->runtime.status=L"MAIN SELL GATE • đang có TRADE/RECOVERY nên cấm click bán";return;}
-            if(mainMacroSellActiveConfig_.cancelSabotageTrade){
-                std::wstring cancelDetail;
-                const int cancelResult=InvokeUiDirectNow(*main,UiDirectTarget::TradeRequestCancel,cancelDetail);
-                if(cancelResult>0){
-                    main->runtime.status=L"MAIN SELL GUARD • đã callback HỦY BỎ yêu cầu giao dịch • kiểm tra lại ngay";
-                    LogAccount(*main,L"HỦY GIAO DỊCH PHÁ HOẠI • Hủy bỏ PASS • giữ nguyên ordinal bán "+std::to_wstring(rt.doneClicks+1));
-                    rt.nextTick=now; return;
-                }
-                if(cancelResult<0){
-                    // Fail-closed: never send a sell click while the request-popup selector is ambiguous/busy.
-                    rt.nextTick=now+50;
-                    if(rt.retryCount==0||rt.retryCount%20==0)LogAccount(*main,L"HỦY GIAO DỊCH PHÁ HOẠI • chờ UI sạch/fail-closed • "+cancelDetail);
-                    ++rt.retryCount; return;
-                }
-                // NOT FOUND proves there is no matching trade-request popup right now; sell may resume.
-                rt.retryCount=0;
-            }
             if(!MainMacroSellClick(*main,mainMacroSellActiveConfig_.point,e)){if(BridgeLooksUnresponsive(e))EnterClientFreeze(*main,L"Bridge timeout khi MAIN macro sell",now);else(void)StartAccountUiRecovery(*main,AccountUiRecoveryPlan::GenericFailClosed,L"MAIN MACRO SELL fail-closed • "+e,now);return;}
-            rt.retryCount=0;if(mainMacroSellActiveConfig_.way2SemanticSell){rt.phase=MainMacroSellRuntime::Phase::SemanticSell;rt.semanticStartedTick=now;rt.semanticNextTick=now;main->runtime.status=L"MAIN SELL CÁCH 2 • chờ semantic BÁN "+std::to_wstring(rt.doneClicks+1)+L"/"+std::to_wstring(rt.targetClicks);return;}++rt.doneClicks;rt.nextTick=GetTickCount()+static_cast<DWORD>(mainMacroSellActiveConfig_.delayMs);main->runtime.status=L"MAIN SELL • macro "+std::to_wstring(rt.doneClicks)+L"/"+std::to_wstring(rt.targetClicks);if(rt.doneClicks>=rt.targetClicks)rt.phase=MainMacroSellRuntime::Phase::RefreshCapacity;return;}
-        if(rt.phase==MainMacroSellRuntime::Phase::SemanticSell){if(rt.semanticNextTick!=0&&static_cast<LONG>(now-rt.semanticNextTick)<0)return;if(!MainSellClickPhaseAllowed()){rt.semanticNextTick=now+50;main->runtime.status=L"MAIN SELL GATE • đang có TRADE/RECOVERY nên cấm semantic BÁN";return;}std::wstring sem;const bool ok=CallFastTravelSemantic(*main,TravelSemantic::SellPopup,false,sem);if(ok){LogAccount(*main,L"MAIN SELL CÁCH 2 • ordinal="+std::to_wstring(rt.doneClicks+1)+L" • semantic BÁN PASS");++rt.doneClicks;rt.semanticStartedTick=0;rt.semanticNextTick=0;rt.nextTick=GetTickCount()+static_cast<DWORD>(mainMacroSellActiveConfig_.delayMs);rt.phase=rt.doneClicks>=rt.targetClicks?MainMacroSellRuntime::Phase::RefreshCapacity:MainMacroSellRuntime::Phase::Clicking;return;}if(rt.semanticStartedTick!=0&&Elapsed(now,rt.semanticStartedTick,2000)){if(SemanticBridgeRequestStillInFlight(sem)){rt.semanticNextTick=now+50;return;}LogAccount(*main,L"MAIN SELL CÁCH 2 • semantic BÁN TIMEOUT 2000ms → HARD RECOVERY + rescan, không tăng ordinal đoán");(void)StartAccountUiRecovery(*main,AccountUiRecoveryPlan::GenericFailClosed,L"MAIN semantic BÁN timeout • "+sem,now);return;}rt.semanticNextTick=now+50;return;}
+            ++rt.doneClicks;rt.nextTick=GetTickCount()+static_cast<DWORD>(mainMacroSellActiveConfig_.delayMs);main->runtime.status=L"MAIN SELL CÁCH 1 • macro "+std::to_wstring(rt.doneClicks)+L"/"+std::to_wstring(rt.targetClicks);if(rt.doneClicks>=rt.targetClicks)rt.phase=MainMacroSellRuntime::Phase::RefreshCapacity;return;}
         if(rt.phase==MainMacroSellRuntime::Phase::RefreshCapacity){if(rt.nextTick!=0&&static_cast<LONG>(now-rt.nextTick)<0)return;if(!ReadSnapshot(*main,e,1200)||!main->snapshotValid||(main->snapshot.validMask&ValidBagSpace)==0){rt.nextTick=GetTickCount()+500;main->runtime.status=L"MAIN SELL • chờ fresh FreeBag sau click cuối";return;}FinishMainMacroSell(*main,main->snapshot.freeBagSpace);return;}
     }
     bool TickMainFullSellBatch(Account&main,DWORD now){
@@ -7807,49 +7766,8 @@ private:
         FinishAccountUiRecovery(account,true);return true;
     }
 
-    bool ImmediateMainTradeConfirmPending() {
-        if (tradeTxn_.phase != TradePhase::Sequence || tradeTxn_.sequenceIndex != 0) return false;
-        EnsureSharedChildTradeSequence();
-        if (childTradeSequence_.empty()) return false;
-        const TradeSequenceStep& stored = childTradeSequence_.front();
-        if (stored.target != 1) return false;
-        const TradeSequenceStep* effective = ResolveMainReference(stored);
-        if (!effective || effective->actionKind != 1) return false;
-        return static_cast<UiDirectTarget>(effective->uiDirectTarget) == UiDirectTarget::TradeConfirm;
-    }
-
     bool MainSellClickPhaseAllowed() const {
         return tradeTxn_.phase == TradePhase::Idle || tradeTxn_.phase == TradePhase::SellPause;
-    }
-
-    int InvokeGlobalTradeSabotageGuard(Account& main, DWORD now, const wchar_t* context) {
-        if (!mainSabotageGuardEnabled_ || mainSabotageGuardPid_ != main.game.pid) return 0;
-        if (ImmediateMainTradeConfirmPending()) return 0; // CON vừa mời PASS → dòng kế MAIN Xác nhận, tuyệt đối không chen Hủy bỏ.
-        std::wstring detail;
-        const int result = InvokeUiDirectNow(main, UiDirectTarget::TradeRequestCancel, detail);
-        if (result > 0) {
-            mainSabotageGuardRetryCount_ = 0;
-            mainSabotageGuardLastLogTick_ = now;
-            LogAccount(main, std::wstring(L"HỦY GIAO DỊCH PHÁ HOẠI • GLOBAL • ") + context + L" • Hủy bỏ PASS • quét tiếp");
-            return 1;
-        }
-        if (result < 0) {
-            ++mainSabotageGuardRetryCount_;
-            if (mainSabotageGuardLastLogTick_ == 0 || Elapsed(now, mainSabotageGuardLastLogTick_, 1000)) {
-                mainSabotageGuardLastLogTick_ = now;
-                LogAccount(main, std::wstring(L"HỦY GIAO DỊCH PHÁ HOẠI • GLOBAL fail-closed • ") + context + L" • " + detail);
-            }
-            return -1;
-        }
-        mainSabotageGuardRetryCount_ = 0;
-        return 0;
-    }
-
-    void TickGlobalTradeSabotageGuard() {
-        Account* main = AccountByTradeRole(kMainTradeRole);
-        if (!main || !main->runtime.running || !IsWindow(main->game.window) || AccountUiRecoveryActive(*main)) return;
-        if (tradeTxn_.phase != TradePhase::Idle) return; // active TRADE/SELL owns MAIN Bridge; TargetMain has explicit pre-invite drain
-        (void)InvokeGlobalTradeSabotageGuard(*main, GetTickCount(), L"timer 50ms");
     }
 
     bool CompleteTradePass(Account& main, Account& child, DWORD now) {
@@ -8245,12 +8163,6 @@ private:
             SetTradeStatus(L"CHỜ • hãy gán và START đúng một MAIN"); return;
         }
         main->tradeHeld = true;
-        {
-            MainMacroSellConfig guardCfg{};
-            (void)LoadMainMacroSellConfig(*main, guardCfg, true);
-            mainSabotageGuardPid_ = main->game.pid;
-            mainSabotageGuardEnabled_ = guardCfg.cancelSabotageTrade;
-        }
 
         // CP8 ATOMIC TRADE SEQUENCE FAST PATH
         // Once Sequence starts, it is a pure saved click macro. Do not run
@@ -8490,15 +8402,6 @@ private:
             if (!tradeTxn_.postTradeClickCompleted &&
                 ExecuteTradeMenuOpenClickTick(*activeChild, now)) {
                 return;
-            }
-
-            if (mainSabotageGuardEnabled_ && mainSabotageGuardPid_ == activeMain->game.pid) {
-                const int drain = InvokeGlobalTradeSabotageGuard(*activeMain, GetTickCount(), L"trước CON mời");
-                if (drain != 0) {
-                    // FOUND: vừa hủy request cũ. FAIL-CLOSED/BUSY: không cho CON gửi lời mời cho tới khi MAIN sạch.
-                    tradeTxn_.targetRetryTick = GetTickCount() + 50;
-                    return;
-                }
             }
 
             Response tradeCallbackResponse{};
@@ -11686,7 +11589,7 @@ private:
         if (rt.routeOwnershipResetPending || rt.autoPathFightConflictLatched || st.autoPathing) return true;
         if (rt.travelFightGuardPhase != 0 || rt.travelFightBoostPhase != 0 || rt.shortcutKind != ShortcutKind::None) return true;
         if (rt.tradeTravelPhase != 0 || a.tradeHeld) return true;
-        if (rt.sellPhase != 0 || activeMainMacroSellPid_ == a.game.pid || mainSabotageGuardPid_ == a.game.pid) return true;
+        if (rt.sellPhase != 0 || activeMainMacroSellPid_ == a.game.pid) return true;
         if (rt.treatmentRoutePending || rt.treatmentPhase != 0 || rt.trainPkPending || rt.trainPkPhase != 0) return true;
         if (rt.priorityAutoRequestSlot != ClickSlot::None || rt.priorityAutoPointPhase != 0) return true;
         if (tradeTxn_.phase != TradePhase::Idle &&
@@ -12461,7 +12364,6 @@ private:
             case WM_TIMER:
                 if (wp == kRecordTimer) { PollRecorder(); return 0; }
                 if (wp == kMainMacroSellTimer) { if (!globalPaused_) TickActiveMainMacroSell(); return 0; }
-                if (wp == kTradeSabotageGuardTimer) { if (!globalPaused_) TickGlobalTradeSabotageGuard(); return 0; }
                 if (wp == kTimer) Tick();
                 return 0;
             case WM_CLOSE:
@@ -12470,7 +12372,6 @@ private:
                 return 0;
             case WM_DESTROY:
                 KillTimer(hwnd_, kMainMacroSellTimer); activeMainMacroSellPid_=0;
-                KillTimer(hwnd_, kTradeSabotageGuardTimer);
                 if (mainSellSettingsWindow_ && IsWindow(mainSellSettingsWindow_)) DestroyWindow(mainSellSettingsWindow_);
                 if (recorderMode_ != RecorderMode::None) StopRecorder(false);
                 // Auto-save every persistent input before exit. Captures already save
@@ -12555,8 +12456,6 @@ private:
     HWND mainMacroSellDelayEdit_ = nullptr;
     HWND mainMacroSellPointLabel_ = nullptr;
     HWND mainMacroSellStatus_ = nullptr;
-    HWND mainMacroSellWay2Check_ = nullptr;
-    HWND mainMacroSellCancelSabotageCheck_ = nullptr;
     DWORD mainMacroSellDialogPid_ = 0;
     MainMacroSellConfig mainMacroSellDialogConfig_{};
     MainMacroSellConfig mainMacroSellActiveConfig_{};
@@ -12784,10 +12683,6 @@ private:
     std::vector<RecordedClick> recorderClicks_{};
     std::vector<TradeSequenceStep> tradeClipboard_{};
     int postTradeCleanupDelayMs_ = 1000;
-    DWORD mainSabotageGuardPid_ = 0;
-    bool mainSabotageGuardEnabled_ = false;
-    DWORD mainSabotageGuardLastLogTick_ = 0;
-    int mainSabotageGuardRetryCount_ = 0;
     int tradeClipboardMode_ = 0;
     bool tradeSeqDragSelecting_ = false;
     bool tradeSeqDragUpdating_ = false;
