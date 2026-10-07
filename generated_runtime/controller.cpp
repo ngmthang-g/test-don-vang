@@ -99,18 +99,6 @@ constexpr DWORD kReadFailLogIntervalMs = 2000;
 constexpr UINT kWindowResponsiveProbeMs = 120;
 constexpr DWORD kTrainPositionCheckMs = 60000;
 constexpr DWORD kAutoFightRecheckMs = 60000;
-constexpr wchar_t kUpcomingFeaturesText[] =
-    L"CÔNG CỤ HỖ TRỢ GAME RẢNH TAY — 10.6\r\n"
-    L"\r\n"
-    L"• Tool chuyên dụng duy nhất cho workflow CON → MAIN.\r\n"
-    L"• CON1–CON30 train, dùng đường tắt và tự về TỌA GD khi full túi.\r\n"
-    L"• Tối đa bốn CON được rời bãi; FIFO chỉ cấp khi đã tới đúng TỌA GD.\r\n"
-    L"• MAIN đứng im: không có CON tại TỌA GD thì click ẩn liên tục; CON tới thì ưu tiên giao dịch; MAIN quota hết thì macro bán, re-plan quota rồi tiếp tục đúng CON đang giữ.\r\n"
-    L"• CON đang giao dịch được giữ nguyên khi MAIN cần bán, không bị trả về bãi.\r\n"
-    L"• TELE / LOG ghi thời gian session, tiến trình, lỗi và biến động vàng khóa kể cả khi Telegram tắt.\r\n"
-    L"\r\n"
-    L"AUTO và AUTO PHÓ BẢN đã được cắt bỏ khỏi bản khách hàng này.\r\n"
-    L"Thiết kế và phát triển bởi Thắng Nguyễn - ĐỒ LONG.";
 constexpr DWORD kMountRetryWaitMs = 5000;
 constexpr DWORD kMountFightBoostMs = 10000;
 constexpr DWORD kPriorityAutoVerifyMs = 1300;
@@ -2607,9 +2595,8 @@ private:
             tab.pszText = const_cast<wchar_t*>(L"AUTO"); TabCtrl_InsertItem(mainTab_, 1, &tab);
             tab.pszText = const_cast<wchar_t*>(L"LOG"); TabCtrl_InsertItem(mainTab_, 2, &tab);
             tab.pszText = const_cast<wchar_t*>(L"TELEGRAM"); TabCtrl_InsertItem(mainTab_, 3, &tab);
-            tab.pszText = const_cast<wchar_t*>(L"GIỚI THIỆU"); TabCtrl_InsertItem(mainTab_, 4, &tab);
-            tab.pszText = const_cast<wchar_t*>(L"DEVELOPER"); TabCtrl_InsertItem(mainTab_, 5, &tab);
-            TabCtrl_SetItemSize(mainTab_, (kMainTabWidth - 8) / 6, 28);
+            tab.pszText = const_cast<wchar_t*>(L"DEVELOPER"); TabCtrl_InsertItem(mainTab_, 4, &tab);
+            TabCtrl_SetItemSize(mainTab_, (kMainTabWidth - 8) / 5, 28);
             TabCtrl_SetCurSel(mainTab_, 0);
         }
         tradeStatus_ = Make(L"STATIC", L"ĐIỀU PHỐI: khởi động...", SS_LEFT | SS_CENTERIMAGE | WS_BORDER,
@@ -2857,40 +2844,6 @@ private:
         if (!telegramLoadWarning_.empty()) AddTelegramLog(L"CONFIG", L"-", L"WARN", telegramLoadWarning_);
 
 
-        aboutHeadingFont_ = CreateFontW(-25, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                                        OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                                        DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-        aboutNameFont_ = CreateFontW(-20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                                     OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                                     DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-        aboutUpcomingFont_ = CreateFontW(-32, 0, 0, 0, FW_HEAVY, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                                         OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                                         DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-        aboutBodyFont_ = CreateFontW(-18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                                     OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                                     DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-
-        HWND aboutHeading = Make(L"STATIC", L"GIỚI THIỆU", SS_CENTER | SS_CENTERIMAGE, 55, 62, 950, 42, 0);
-        HWND aboutName = Make(L"STATIC", L"Thiết kế và phát triển bởi Thắng Nguyễn - ĐỒ LONG",
-                              SS_CENTER | SS_CENTERIMAGE | WS_BORDER, 55, 112, 950, 46, 0);
-        HWND aboutUpcoming = Make(L"STATIC", L"CÁC TÍNH NĂNG SẮP RA MẮT",
-                                  SS_CENTER | SS_CENTERIMAGE | WS_BORDER, 55, 170, 950, 66, 0);
-        HWND aboutVersion = Make(L"STATIC", L"Công cụ hỗ trợ game rảnh tay • 10.6",
-                                 SS_CENTER | SS_CENTERIMAGE, 55, 242, 950, 28, 0);
-        HWND aboutBody = Make(L"EDIT", kUpcomingFeaturesText,
-                              WS_BORDER | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL,
-                              55, 280, 950, 642, 0);
-        if (aboutHeading && aboutHeadingFont_) SendMessageW(aboutHeading, WM_SETFONT, reinterpret_cast<WPARAM>(aboutHeadingFont_), TRUE);
-        if (aboutName && aboutNameFont_) SendMessageW(aboutName, WM_SETFONT, reinterpret_cast<WPARAM>(aboutNameFont_), TRUE);
-        if (aboutUpcoming && aboutUpcomingFont_) SendMessageW(aboutUpcoming, WM_SETFONT, reinterpret_cast<WPARAM>(aboutUpcomingFont_), TRUE);
-        if (aboutVersion && aboutNameFont_) SendMessageW(aboutVersion, WM_SETFONT, reinterpret_cast<WPARAM>(aboutNameFont_), TRUE);
-        if (aboutBody && aboutBodyFont_) {
-            SendMessageW(aboutBody, WM_SETFONT, reinterpret_cast<WPARAM>(aboutBodyFont_), TRUE);
-            SendMessageW(aboutBody, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(12, 12));
-        }
-        aboutControls_ = {aboutHeading, aboutName, aboutUpcoming, aboutVersion, aboutBody};
-        for (HWND h : aboutControls_) if (h) ShowWindow(h, SW_HIDE);
-
         if (!RegisterHotKey(hwnd_, kCaptureHotkeyId, MOD_NOREPEAT, VK_F8)) {
             Log(L"CẢNH BÁO: không đăng ký được F8 global.");
         }
@@ -2907,10 +2860,6 @@ private:
         UpdateGatherLabel();
         UpdatePartyBuildToggleLabel();
         ScanClients();
-    }
-
-    bool IsAboutControl(HWND h) const {
-        return std::find(aboutControls_.begin(), aboutControls_.end(), h) != aboutControls_.end();
     }
 
     bool IsTelegramControl(HWND h) const {
@@ -2931,14 +2880,14 @@ private:
 
     void SwitchMainTab(int index) {
         if (!mainTab_) return;
-        index = std::clamp(index, 0, 5);
+        index = std::clamp(index, 0, 4);
 
         if (index == mainTabIndex_) return;
 
         if (mainTabIndex_ == 0) {
             autoTabVisibility_.clear();
             for (HWND child = GetWindow(hwnd_, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
-                if (child == mainTab_ || IsAboutControl(child) || IsTelegramControl(child) || IsRuntimeLogControl(child) || IsDeveloperControl(child)) continue;
+                if (child == mainTab_ || IsTelegramControl(child) || IsRuntimeLogControl(child) || IsDeveloperControl(child)) continue;
                 autoTabVisibility_.push_back({child, IsWindowVisible(child) != FALSE});
                 ShowWindow(child, SW_HIDE);
             }
@@ -2951,15 +2900,12 @@ private:
         } else if (mainTabIndex_ == 3) {
             for (HWND h : telegramControls_) if (h) ShowWindow(h, SW_HIDE);
         } else if (mainTabIndex_ == 4) {
-            for (HWND h : aboutControls_) if (h) ShowWindow(h, SW_HIDE);
-        } else if (mainTabIndex_ == 5) {
             ShowDeveloperControls(false);
         }
 
         if (index == 0) {
             for (HWND h : runtimeLogControls_) if (h) ShowWindow(h, SW_HIDE);
             for (HWND h : telegramControls_) if (h) ShowWindow(h, SW_HIDE);
-            for (HWND h : aboutControls_) if (h) ShowWindow(h, SW_HIDE);
             ShowDeveloperControls(false);
             for (const auto& saved : autoTabVisibility_) {
                 if (saved.first && IsWindow(saved.first)) ShowWindow(saved.first, saved.second ? SW_SHOW : SW_HIDE);
@@ -2968,7 +2914,6 @@ private:
         } else if (index == 1) {
             for (HWND h : runtimeLogControls_) if (h) ShowWindow(h, SW_HIDE);
             for (HWND h : telegramControls_) if (h) ShowWindow(h, SW_HIDE);
-            for (HWND h : aboutControls_) if (h) ShowWindow(h, SW_HIDE);
             ShowDeveloperControls(false);
             if (imageScanButton_) ShowWindow(imageScanButton_, SW_SHOW);
             if (filterMode2Button_) ShowWindow(filterMode2Button_, SW_SHOW);
@@ -2976,24 +2921,16 @@ private:
             UpdateFilterModeButtons();
         } else if (index == 2) {
             for (HWND h : telegramControls_) if (h) ShowWindow(h, SW_HIDE);
-            for (HWND h : aboutControls_) if (h) ShowWindow(h, SW_HIDE);
             ShowDeveloperControls(false);
             for (HWND h : runtimeLogControls_) if (h) ShowWindow(h, SW_SHOW);
             if (log_) SendMessageW(log_, EM_SCROLLCARET, 0, 0);
         } else if (index == 3) {
             for (HWND h : runtimeLogControls_) if (h) ShowWindow(h, SW_HIDE);
-            for (HWND h : aboutControls_) if (h) ShowWindow(h, SW_HIDE);
             ShowDeveloperControls(false);
             for (HWND h : telegramControls_) if (h) ShowWindow(h, SW_SHOW);
-        } else if (index == 4) {
-            for (HWND h : runtimeLogControls_) if (h) ShowWindow(h, SW_HIDE);
-            for (HWND h : telegramControls_) if (h) ShowWindow(h, SW_HIDE);
-            ShowDeveloperControls(false);
-            for (HWND h : aboutControls_) if (h) ShowWindow(h, SW_SHOW);
         } else {
             for (HWND h : runtimeLogControls_) if (h) ShowWindow(h, SW_HIDE);
             for (HWND h : telegramControls_) if (h) ShowWindow(h, SW_HIDE);
-            for (HWND h : aboutControls_) if (h) ShowWindow(h, SW_HIDE);
             ShowDeveloperControls(true);
         }
         mainTabIndex_ = index;
@@ -12756,9 +12693,6 @@ private:
                 UnregisterHotKey(hwnd_, kPauseHotkeyId);
                 for (auto& a : accounts_) a->bridge.Close();
                 if (shortcutDarkBrush_) { DeleteObject(shortcutDarkBrush_); shortcutDarkBrush_ = nullptr; }
-                for (HFONT* font : {&aboutHeadingFont_, &aboutNameFont_, &aboutUpcomingFont_, &aboutBodyFont_}) {
-                    if (*font) { DeleteObject(*font); *font = nullptr; }
-                }
                 PostQuitMessage(0);
                 return 0;
         }
@@ -12878,7 +12812,6 @@ private:
     std::vector<std::wstring> autoDropNames_{};
     HWND mainTab_ = nullptr;
     int mainTabIndex_ = 0;
-    std::vector<HWND> aboutControls_{};
     std::vector<HWND> telegramControls_{};
     std::vector<HWND> runtimeLogControls_{};
     std::vector<HWND> developerControls_{};
@@ -12888,10 +12821,6 @@ private:
     HWND partyBuildTargetRetryEdit_ = nullptr;
     HWND partyBuildInviteRetryEdit_ = nullptr;
     int partyBuildCaptureIndex_ = -1;
-    HFONT aboutHeadingFont_ = nullptr;
-    HFONT aboutNameFont_ = nullptr;
-    HFONT aboutUpcomingFont_ = nullptr;
-    HFONT aboutBodyFont_ = nullptr;
     std::vector<std::pair<HWND, bool>> autoTabVisibility_{};
     std::vector<std::pair<HWND, bool>> compactVisibility_{};
     bool compactMode_ = false;
