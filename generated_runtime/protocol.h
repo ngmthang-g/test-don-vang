@@ -39,7 +39,6 @@ enum class Command : std::uint32_t {
     SelectTargetByRoleID = 22,
     ClickTravelSemantic = 23,
     ConfirmTravelSemantic = 24,
-    TestOpenBag = 25,
     // FILTER V4 only: image recognition -> raw InputSync click, independent of AUTO state.
     ClickInternalPointRawTest = 26,
     DragInternalPoint = 27,
