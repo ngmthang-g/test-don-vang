@@ -118,43 +118,7 @@ jobs:
       - name: Verify Release package SHA256 and PE x64 machine
         shell: pwsh
         run: |
-          $expected = @('CongCuHoTroGameRanhTay_10.6.exe', 'ThanLongCleanRouteBridge.dll')
-          $found = @(Get-ChildItem -Path artifact -File | Select-Object -ExpandProperty Name)
-          if ($found.Count -ne 3) { throw "T20 package must have 3 files, got $($found.Count)" }
-          foreach ($name in $expected + @('SHA256SUMS.txt')) {
-            if ($name -cnotin $found) { throw "T20 package missing: $name" }
-          }
-          $records = @(Get-Content artifact/SHA256SUMS.txt)
-          if ($records.Count -ne $expected.Count) { throw "T20 expected exactly two checksum rows" }
-          for ($i = 0; $i -lt $expected.Count; $i++) {
-            $row = $records[$i]
-            if ($row -cnotmatch '^([0-9a-f]{64})  (\S+)        uses: actions/upload-artifact@v4
-        with:
-          name: gold-only-10.6-win-x64-${{ github.sha }}
-          path: artifact/*
-          if-no-files-found: error
-          retention-days: 30
-) { throw "T20 malformed checksum row $i" }
-            $recordedHash = $Matches[1]
-            $recordedName = $Matches[2]
-            if ($recordedName -cne $expected[$i]) { throw "T20 checksum filename mismatch: $recordedName" }
-            $p = Join-Path artifact $recordedName
-            $actualHash = (Get-FileHash -Algorithm SHA256 $p).Hash.ToLowerInvariant()
-            if ($actualHash -cne $recordedHash) { throw "T20 checksum mismatch: $recordedName" }
-            $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $p).Path)
-            if ($bytes.Length -lt 256 -or [BitConverter]::ToUInt16($bytes, 0) -ne 0x5A4D) {
-              throw "T20 not a valid DOS/PE executable: $recordedName"
-            }
-            $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
-            if ($peOffset -lt 64 -or ($peOffset + 24) -ge $bytes.Length) {
-              throw "T20 invalid PE header offset: $recordedName"
-            }
-            if ([BitConverter]::ToUInt32($bytes, $peOffset) -ne 0x00004550 -or
-                [BitConverter]::ToUInt16($bytes, $peOffset + 4) -ne 0x8664) {
-              throw "T20 expected Windows x64 PE: $recordedName"
-            }
-          }
-          Write-Host 'T20 Release package PASS: 2 verified x64 PE files, 2 SHA256SUMS hashes, no extras'
+          ./scripts/verify_release_package.ps1
 
       - name: Upload EXE and DLL
         uses: actions/upload-artifact@v4
