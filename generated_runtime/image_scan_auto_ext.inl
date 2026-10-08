@@ -411,50 +411,6 @@ void LoadPersistentConfigImpl(){
 void EnsurePersistentConfigLoaded(){if(g_persistentConfigLoadAttempted)return;g_persistentConfigLoadAttempted=true;LoadPersistentConfigImpl();}
 void SavePersistentConfig(){g_persistentConfigLoadAttempted=true;SavePersistentConfigImpl();}
 
-namespace {
-struct PortableScanCoordData { Config config{}; };
-
-bool ParsePortableScanCoords(const std::wstring& text, PortableScanCoordData& out, std::wstring& error) {
-    EnsurePersistentConfigLoaded();out.config=g_lastConfig;if(out.config.steps.size()!=kDefaultInitialSteps)out.config.steps.resize(kDefaultInitialSteps);
-    auto parseInt=[](const std::wstring& raw,int& v)->bool{try{std::size_t used=0;long x=std::stol(raw,&used,10);if(used!=raw.size()||x<-2147483648L||x>2147483647L)return false;v=(int)x;return true;}catch(...){return false;}};
-    auto split=[](const std::wstring& line){std::vector<std::wstring> f;std::size_t p=0;while(true){std::size_t q=line.find(L'\t',p);f.push_back(line.substr(p,q==std::wstring::npos?std::wstring::npos:q-p));if(q==std::wstring::npos)break;p=q+1;}return f;};
-    auto parseStep=[&](const std::vector<std::wstring>&f,ClickStep&dst)->bool{if(f.size()!=8)return false;int valid=0,x=0,y=0,w=0,h=0,delay=0;if(!parseInt(f[2],valid)||!parseInt(f[3],x)||!parseInt(f[4],y)||!parseInt(f[5],w)||!parseInt(f[6],h)||!parseInt(f[7],delay))return false;if((valid!=0&&valid!=1)||delay<0||delay>60000)return false;if(valid&&(x<0||y<0||w<=0||h<=0))return false;const int keepRepeat=std::max(1,dst.repeat);dst.x=x;dst.y=y;dst.baseW=w;dst.baseH=h;dst.valid=valid!=0;dst.delayMs=delay;dst.repeat=keepRepeat;return true;};
-    bool header=false,end=false;int formatVersion=0,roiSeen=0,stepSeen=0,gridCount=-1,gridSeen=0;std::array<bool,3> rois{};std::array<bool,4> specials{};std::array<bool,42> grids{};
-    std::wistringstream in(text);std::wstring line;
-    while(std::getline(in,line)){
-        if(!line.empty()&&line.back()==L'\r')line.pop_back();if(line.empty())continue;const auto f=split(line);
-        if(!header){if(f.size()!=2||f[0]!=L"TLFILTERCOORD"||!parseInt(f[1],formatVersion)||(formatVersion!=2&&formatVersion!=3)){error=L"FILTER_COORD sai header/version";return false;}header=true;continue;}
-        if(f[0]==L"ROI"){
-            if(f.size()!=8){error=L"FILTER ROI sai cột";return false;}int idx=-1;static constexpr const wchar_t* names[3]={L"GOOD",L"DISCARD",L"CLOSE"};for(int i=0;i<3;++i)if(f[1]==names[i])idx=i;
-            int x=0,y=0,w=0,h=0,bw=0,bh=0;if(idx<0||rois[(size_t)idx]||!parseInt(f[2],x)||!parseInt(f[3],y)||!parseInt(f[4],w)||!parseInt(f[5],h)||!parseInt(f[6],bw)||!parseInt(f[7],bh)){error=L"FILTER ROI lỗi/trùng";return false;}
-            ScanRoi r{x,y,w,h,bw,bh};if(idx==0){out.config.x=x;out.config.y=y;out.config.w=w;out.config.h=h;out.config.roiBaseW=bw;out.config.roiBaseH=bh;}else if(idx==1)out.config.discardRoi=r;else out.config.closeRoi=r;rois[(size_t)idx]=true;++roiSeen;
-        }else if(f[0]==L"STEP"){
-            int idx=-1;if(f.size()>1){if(f[1]==L"PRECHECK_SWITCH")idx=0;else if(f[1]==L"BAG_OPEN")idx=1;else if(f[1]==L"SWIPE_START")idx=2;else if(f[1]==L"SWIPE_END")idx=3;}
-            if(idx<0||(formatVersion<3&&idx==1)||specials[(size_t)idx]){error=L"FILTER STEP key lỗi/trùng";return false;}
-            ClickStep* dst=idx==0?&out.config.bagUiSwitch:(idx==1?&out.config.bagOpenClick:(idx==2?&out.config.swipeStart:&out.config.swipeEnd));
-            if(!parseStep(f,*dst)){error=L"FILTER STEP geometry/delay lỗi";return false;}specials[(size_t)idx]=true;++stepSeen;
-        }else if(f[0]==L"GRID_COUNT"){
-            if(f.size()!=2||gridCount>=0||!parseInt(f[1],gridCount)||gridCount!=42){error=L"FILTER GRID_COUNT phải =42";return false;}
-        }else if(f[0]==L"GRID"){
-            if(f.size()!=8){error=L"FILTER GRID sai cột";return false;}int idx=-1;if(!parseInt(f[1],idx)||idx<0||idx>=42||grids[(size_t)idx]){error=L"FILTER GRID index lỗi/trùng";return false;}std::vector<std::wstring> sf={L"STEP",L"GRID",f[2],f[3],f[4],f[5],f[6],f[7]};if(!parseStep(sf,out.config.steps[(size_t)idx])){error=L"FILTER GRID geometry/delay lỗi";return false;}grids[(size_t)idx]=true;++gridSeen;
-        }else if(f[0]==L"END"){if(end||f.size()!=2||f[1]!=L"1"){error=L"FILTER END lỗi/trùng";return false;}end=true;}
-        else{error=L"FILTER_COORD dòng không nhận dạng: "+f[0];return false;}
-    }
-    const int expectedSteps=formatVersion>=3?4:3;
-    if(!header||!end||roiSeen!=3||stepSeen!=expectedSteps||gridCount!=42||gridSeen!=42){error=L"FILTER_COORD thiếu nhóm tọa bắt buộc";return false;}error.clear();return true;
-}
-} // namespace
-
-bool ExportPortableCoordinates(std::wstring& text,std::wstring& error){
-    EnsurePersistentConfigLoaded();if(g_lastConfig.steps.size()!=kDefaultInitialSteps)g_lastConfig.steps.resize(kDefaultInitialSteps);std::wostringstream o;o<<L"TLFILTERCOORD\t3\r\n";
-    auto roi=[&](const wchar_t*n,int x,int y,int w,int h,int bw,int bh){o<<L"ROI\t"<<n<<L"\t"<<x<<L"\t"<<y<<L"\t"<<w<<L"\t"<<h<<L"\t"<<bw<<L"\t"<<bh<<L"\r\n";};
-    roi(L"GOOD",g_lastConfig.x,g_lastConfig.y,g_lastConfig.w,g_lastConfig.h,g_lastConfig.roiBaseW,g_lastConfig.roiBaseH);auto rr=[&](const wchar_t*n,const ScanRoi&r){roi(n,r.x,r.y,r.w,r.h,r.baseW,r.baseH);};rr(L"DISCARD",g_lastConfig.discardRoi);rr(L"CLOSE",g_lastConfig.closeRoi);
-    auto step=[&](const wchar_t*n,const ClickStep&p){o<<L"STEP\t"<<n<<L"\t"<<(p.valid?1:0)<<L"\t"<<p.x<<L"\t"<<p.y<<L"\t"<<p.baseW<<L"\t"<<p.baseH<<L"\t"<<std::clamp(p.delayMs,0,60000)<<L"\r\n";};
-    step(L"PRECHECK_SWITCH",g_lastConfig.bagUiSwitch);step(L"BAG_OPEN",g_lastConfig.bagOpenClick);step(L"SWIPE_START",g_lastConfig.swipeStart);step(L"SWIPE_END",g_lastConfig.swipeEnd);
-    o<<L"GRID_COUNT\t42\r\n";for(int i=0;i<42;++i){const auto&p=g_lastConfig.steps[(size_t)i];o<<L"GRID\t"<<i<<L"\t"<<(p.valid?1:0)<<L"\t"<<p.x<<L"\t"<<p.y<<L"\t"<<p.baseW<<L"\t"<<p.baseH<<L"\t"<<std::clamp(p.delayMs,0,60000)<<L"\r\n";}o<<L"END\t1\r\n";text=o.str();error.clear();return true;
-}
-bool ValidatePortableCoordinates(const std::wstring& text,std::wstring& error){PortableScanCoordData d{};return ParsePortableScanCoords(text,d,error);}
-bool ImportPortableCoordinates(const std::wstring& text,std::wstring& error){PortableScanCoordData d{};if(!ParsePortableScanCoords(text,d,error))return false;g_lastConfig=std::move(d.config);SavePersistentConfigImpl();error.clear();return true;}
 bool ChildFilterConfigured(int childSlot){EnsurePersistentConfigLoaded();return ValidChildSlot(childSlot)&&g_lastConfig.childEnabled[static_cast<std::size_t>(childSlot-1)];}
 bool AutoSessionNeedsTickForSlot(int childSlot){for(const auto& kv:g_autoSessions){if(kv.first.childSlot!=childSlot)continue;const AutoSession& s=kv.second;if(s.turnOwned||s.phase==AutoPhase::Recovery||s.bagOpened||s.currentItemActive)return true;}return false;}
 bool IsChildAutoFilterEnabled(int childSlot){if(!ValidChildSlot(childSlot))return false;return (ChildFilterConfigured(childSlot)&&MaxConcurrent()>0)||AutoSessionNeedsTickForSlot(childSlot);}
