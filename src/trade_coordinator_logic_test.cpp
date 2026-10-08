@@ -71,24 +71,32 @@ int main() {
     assert(!ShouldAssignArrivalTicket(false, false));
     assert(!ShouldAssignArrivalTicket(true, true));
 
-    // MAIN idle click is separate/infinite. With a waiting/active CON, generic
-    // sell capacity is <9; CON accounts still never use this MAIN sell path.
-    assert(!ShouldAutoSell(false, 0, false, 0));
-    assert(ShouldAutoSell(false, 0, true, 0));
-    assert(!ShouldAutoSell(false, 0, true, 1));
-    // 10.2 approved path: consolidation is mandatory globally, but role NONE still
-    // remains an independent account and sells only when its own bag is FULL.
+    // T18 golden role/capacity regression: NONE and CON never start auto seller.
+    assert(!ShouldAutoSell(false, 0, true, 0));
     assert(!ShouldAutoSell(true, 0, false, 0));
-    assert(ShouldAutoSell(true, 0, true, 0));
+    assert(!ShouldAutoSell(true, 0, true, 0));
     assert(!ShouldAutoSell(true, 0, true, 1));
+    assert(!ShouldAutoSell(true, 2, true, 0));
+    assert(!ShouldAutoSell(true, 31, true, 0));
+    assert(!ShouldAutoSell(false, 1, true, 0));
     assert(!ShouldAutoSell(true, 1, false, 0));
+    assert(!ShouldAutoSell(true, 1, true, -1));
     assert(ShouldAutoSell(true, 1, true, 0));
-    assert(ShouldAutoSell(true, 1, true, 1));
     assert(ShouldAutoSell(true, 1, true, 8));
     assert(!ShouldAutoSell(true, 1, true, 9));
     assert(!ShouldAutoSell(true, 1, true, 30));
-    assert(!ShouldAutoSell(true, 2, true, 0));
 
+    // This explicit runtime check remains enforced in Release /DNDEBUG builds.
+    if (ShouldAutoSell(true, 0, true, 0) ||
+        ShouldAutoSell(false, 1, true, 0) ||
+        ShouldAutoSell(true, 2, true, 0) ||
+        !ShouldAutoSell(true, 1, true, 8) ||
+        ShouldAutoSell(true, 1, true, 9) ||
+        !MainNeedsCapacitySell(8) || MainNeedsCapacitySell(9) ||
+        !CanStartTradePass(9) || CanStartTradePass(8)) {
+        std::cerr << "T18 FAIL: NONE/CON must never auto-sell; MAIN quota must remain 9" << std::endl;
+        return 1;
+    }
     std::cout << "trade_coordinator_logic_tests PASS\n";
     return 0;
 }
