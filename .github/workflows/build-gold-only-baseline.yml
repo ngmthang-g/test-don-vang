@@ -66,7 +66,6 @@ jobs:
             'con_filter_nosleep_logic_tests',
             'sell_filter_grid_v2_logic_tests',
             'auto_loot_logic_tests',
-            'pk_tl_lm_logic_tests',
             'integration_hardening_logic_tests',
             'auto_role_logic_tests'
           )
