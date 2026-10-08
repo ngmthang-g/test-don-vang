@@ -67,13 +67,6 @@ struct AutoFilterResult {
 void EnsurePersistentConfigLoaded();
 void SavePersistentConfig();
 
-// Coordinate-only portable backup used by the main XUẤT/NHẬP TẤT CẢ.
-// Contains only ROI/click/drag geometry and click delay values.
-// It deliberately excludes image paths, thresholds, child switches and every non-coordinate setting.
-bool ExportPortableCoordinates(std::wstring& text, std::wstring& error);
-bool ValidatePortableCoordinates(const std::wstring& text, std::wstring& error);
-bool ImportPortableCoordinates(const std::wstring& text, std::wstring& error);
-
 // CON1..CON30 enable switches live in the shared FILTER settings/config.
 bool IsChildAutoFilterEnabled(int childSlot);
 void SetAutoFilterMode(FilterMode mode);
