@@ -1565,9 +1565,6 @@ struct Account {
     // Snapshot polling continues; normal route/death FSM resumes immediately after abort/release.
     bool tradeHeld = false;
     MainMacroSellRuntime macroSell{};
-    // 10.2 independent NONE seller: after the first historical 90-click ceiling,
-    // reuse the stable FreeBagSpace learned from the previous successful sale.
-    int sellStep5LearnedRepeat = 0;
 
 };
 
