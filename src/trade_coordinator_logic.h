@@ -80,16 +80,13 @@ inline bool ShouldAssignArrivalTicket(bool arrivedAtRendezvous, bool alreadyQueu
     return arrivedAtRendezvous && !alreadyQueued;
 }
 
-// Generic auto-sell predicate. MAIN's ordinary idle click is scheduled
-// separately and runs whenever no CON has arrived at TỌA GD. When a CON is
-// waiting/active, MAIN capacity below 9 requires the configured sell batch.
+// T18: role NONE and CON have no autonomous seller. MAIN only.
+// MAIN idle sell uses its own timer; quota capacity below nine reserves
+// a MAIN-only sell batch while CON trade is waiting/active.
 inline bool ShouldAutoSell(bool consolidationEnabled, int tradeRole, bool enableSell,
                            int freeBagSpace) {
-    if (freeBagSpace < 0 || !enableSell) return false;
-    if (!consolidationEnabled) return freeBagSpace <= 0;
-    if (tradeRole >= 2) return false;
-    if (tradeRole == 1) return MainNeedsCapacitySell(freeBagSpace);
-    return freeBagSpace <= 0;
+    return consolidationEnabled && tradeRole == 1 && enableSell &&
+           MainNeedsCapacitySell(freeBagSpace);
 }
 
 } // namespace itemtrade_coordinator
