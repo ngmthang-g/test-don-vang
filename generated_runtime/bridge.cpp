@@ -2472,11 +2472,6 @@ bool IsExactSemanticToken(const std::wstring& raw, TravelSemantic semantic) {
         case TravelSemantic::DiscardPopup: return key == L"vut" || key == L"vutbo" || key == L"discard";
         case TravelSemantic::DiscardConfirm: return key == L"xacnhan";
         case TravelSemantic::PutUpPopup: return key == L"datlen";
-        case TravelSemantic::NamHai: return key == L"namhai";
-        case TravelSemantic::MieuCuong: return key == L"mieucuong";
-        case TravelSemantic::HoangLongPhu: return key == L"hoanglongphu";
-        case TravelSemantic::ThachLam: return key == L"thachlam";
-        case TravelSemantic::DaiLy: return key == L"daili";
         default: return false;
     }
 }
