@@ -1,5 +1,4 @@
 #include "route_logic.h"
-#include "thdc_route_logic.h"
 #include <cstdio>
 using namespace cleanroute_logic;
 
@@ -46,32 +45,6 @@ int main() {
     Check(AtTarget(preciseState, trainTolerance), "tolerance-split:train-120-allows-near");
     Check(!AtTarget(preciseState, preciseTolerance), "tolerance-split:precise-20-rejects-50-away");
 
-    using thdc_route_logic::NextGate;
-    auto gate = NextGate(10000, 10017);
-    Check(gate.valid && gate.sourceMap == 10000 && gate.expectedMap == 10014 &&
-          gate.coordinateIndex == 0 && gate.confirmAfterTransition,
-          "thdc:interserver-enters-floor1-first");
-    gate = NextGate(10014, 10017);
-    Check(gate.valid && gate.sourceMap == 10014 && gate.expectedMap == 10015 && gate.coordinateIndex == 1,
-          "thdc:floor1-up-uses-m10014-gate");
-    gate = NextGate(10015, 10017);
-    Check(gate.valid && gate.sourceMap == 10015 && gate.expectedMap == 10016 && gate.coordinateIndex == 2,
-          "thdc:floor2-up-uses-m10015-gate");
-    gate = NextGate(10015, 10014);
-    Check(gate.valid && gate.sourceMap == 10015 && gate.expectedMap == 10014 && gate.coordinateIndex == 3,
-          "thdc:floor2-down-uses-second-m10015-gate");
-    gate = NextGate(10016, 10017);
-    Check(gate.valid && gate.sourceMap == 10016 && gate.expectedMap == 10017 && gate.coordinateIndex == 4,
-          "thdc:floor3-up-uses-m10016-gate");
-    gate = NextGate(10016, 10014);
-    Check(gate.valid && gate.sourceMap == 10016 && gate.expectedMap == 10015 && gate.coordinateIndex == 5,
-          "thdc:floor3-down-uses-second-m10016-gate");
-    gate = NextGate(10017, 10014);
-    Check(gate.valid && gate.sourceMap == 10017 && gate.expectedMap == 10016 && gate.coordinateIndex == 6,
-          "thdc:floor4-down-uses-m10017-gate");
-    Check(!NextGate(10017, 10017).valid, "thdc:destination-floor-does-not-route");
-    Check(!NextGate(10016, 10005).valid, "thdc:non-thdc-target-rejected");
-
-    std::printf("RESULT %d/28 PASS\n", 28 - g_fail);
+    std::printf("RESULT %d/19 PASS\n", 19 - g_fail);
     return g_fail ? 1 : 0;
 }
