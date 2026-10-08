@@ -146,12 +146,6 @@ constexpr int IDC_AUTO_LOOT_INTERVAL = 5005;
 constexpr int IDC_LOOT_SCAN = 5006;
 constexpr int IDC_LOOT_PICK = 5007;
 constexpr int IDC_LOOT_OUTPUT = 5008;
-constexpr int IDC_ENABLE_TRAIN_PK = 5010;
-constexpr int IDC_CAPTURE_TRAIN_PK = 5011;
-constexpr int IDC_ENABLE_TREATMENT = 5012;
-constexpr int IDC_CAPTURE_TREATMENT = 5013;
-constexpr int IDC_ENABLE_ALLIANCE_PK = 5014;
-constexpr int IDC_CAPTURE_ALLIANCE_PK = 5015;
 constexpr int IDC_BAG_SCAN_REFRESH = 5101;
 constexpr int IDC_BAG_SCAN_ADD_SELECTED = 5102;
 constexpr int IDC_BAG_SCAN_NAME_EDIT = 5103;
@@ -491,11 +485,6 @@ struct SharedPkTlLmSettings {
     std::array<ClickPoint, pk_tl_lm_logic::kSharedPointCount> points{};
 };
 
-constexpr std::array<const wchar_t*, pk_tl_lm_logic::kSharedPointCount> kSharedPkTlLmPointKeys = {
-    L"TrainPk1", L"TrainPk2", L"Treatment1", L"Treatment2",
-    L"Treatment3", L"Treatment4", L"AlliancePk1", L"AlliancePk2"
-};
-
 int SharedPkTlLmPointIndex(ClickSlot slot) {
     return pk_tl_lm_logic::SharedPointIndexForClickSlot(static_cast<int>(slot));
 }
@@ -587,9 +576,6 @@ struct AccountProfile {
     bool enableRevive = true;
     bool enableConfirm = true;
     bool enableFight = true;
-    bool enableTrainPk = false;
-    bool enableTreatment = false;
-    bool enableAlliancePk = false;
     bool enableSell = false;
     int sellNpcPreset = 0;
     TargetProfile target{};
@@ -646,6 +632,10 @@ struct RuntimeState {
     DWORD lastAutoFightCheckTick = 0;
     int trainRecoveryPhase = 0;
 
+    // T14 compatibility for T15 handlers only: never loaded or enabled by UI/INI.
+    bool retiredTrainPkEnabled = false;
+    bool retiredTreatmentEnabled = false;
+    bool retiredAlliancePkEnabled = false;
     int trainPkPhase = 0;
     DWORD trainPkTick = 0;
     bool trainPkPending = false;
@@ -1088,44 +1078,6 @@ void SaveSharedSellNpcPositions(const std::array<SellNpcPosition, kSellNpcs.size
     FlushIni();
 }
 
-SharedPkTlLmSettings LoadSharedPkTlLmSettings() {
-    SharedPkTlLmSettings out{};
-    const std::wstring section = L"PkTlLmShared";
-    out.treatmentTarget.name = L"NPC trị liệu";
-    out.treatmentTarget.mapID = ReadIniInt(section, L"TreatmentMap", 0);
-    out.treatmentTarget.x = ReadIniInt(section, L"TreatmentX", 0);
-    out.treatmentTarget.y = ReadIniInt(section, L"TreatmentY", 0);
-    out.treatmentTarget.valid = out.treatmentTarget.mapID > 0 && ReadIniInt(section, L"TreatmentValid", 0) != 0;
-    for (std::size_t i = 0; i < out.points.size(); ++i) {
-        ClickPoint& c = out.points[i];
-        const std::wstring prefix = kSharedPkTlLmPointKeys[i];
-        c.x = ReadIniInt(section, prefix + L"X", -1);
-        c.y = ReadIniInt(section, prefix + L"Y", -1);
-        c.baseW = ReadIniInt(section, prefix + L"W", 0);
-        c.baseH = ReadIniInt(section, prefix + L"H", 0);
-        c.valid = ReadIniInt(section, prefix + L"Valid", 0) != 0 && c.x >= 0 && c.y >= 0 && c.baseW > 0 && c.baseH > 0;
-    }
-    return out;
-}
-
-void SaveSharedPkTlLmSettings(const SharedPkTlLmSettings& settings) {
-    const std::wstring section = L"PkTlLmShared";
-    WriteIniInt(section, L"TreatmentMap", settings.treatmentTarget.valid ? settings.treatmentTarget.mapID : 0);
-    WriteIniInt(section, L"TreatmentX", settings.treatmentTarget.valid ? settings.treatmentTarget.x : 0);
-    WriteIniInt(section, L"TreatmentY", settings.treatmentTarget.valid ? settings.treatmentTarget.y : 0);
-    WriteIniInt(section, L"TreatmentValid", settings.treatmentTarget.valid ? 1 : 0);
-    for (std::size_t i = 0; i < settings.points.size(); ++i) {
-        const ClickPoint& c = settings.points[i];
-        const std::wstring prefix = kSharedPkTlLmPointKeys[i];
-        WriteIniInt(section, prefix + L"X", c.valid ? c.x : -1);
-        WriteIniInt(section, prefix + L"Y", c.valid ? c.y : -1);
-        WriteIniInt(section, prefix + L"W", c.valid ? c.baseW : 0);
-        WriteIniInt(section, prefix + L"H", c.valid ? c.baseH : 0);
-        WriteIniInt(section, prefix + L"Valid", c.valid ? 1 : 0);
-    }
-    FlushIni();
-}
-
 AccountProfile LoadProfile(const std::wstring& section) {
     AccountProfile p{};
     p.section = section;
@@ -1141,9 +1093,6 @@ AccountProfile LoadProfile(const std::wstring& section) {
     p.enableRevive = ReadIniInt(section, L"EnableRevive", 1) != 0;
     p.enableConfirm = ReadIniInt(section, L"EnableConfirm", 1) != 0;
     p.enableFight = ReadIniInt(section, L"EnableFight", 1) != 0;
-    p.enableTrainPk = ReadIniInt(section, L"EnableAutoPk", ReadIniInt(section, L"EnableTrainPk", 0)) != 0;
-    p.enableTreatment = ReadIniInt(section, L"EnableTreatment", 0) != 0;
-    p.enableAlliancePk = ReadIniInt(section, L"EnableAlliancePk", 0) != 0;
     p.enableSell = ReadIniInt(section, L"EnableSell", 0) != 0;
     p.sellNpcPreset = ReadIniInt(section, L"SellNpcPreset", 0);
     if (p.sellNpcPreset < 0 || p.sellNpcPreset >= static_cast<int>(kSellNpcs.size())) p.sellNpcPreset = 0;
@@ -1195,9 +1144,6 @@ void SaveProfile(const AccountProfile& p) {
     WriteIniInt(p.section, L"EnableRevive", p.enableRevive ? 1 : 0);
     WriteIniInt(p.section, L"EnableConfirm", p.enableConfirm ? 1 : 0);
     WriteIniInt(p.section, L"EnableFight", p.enableFight ? 1 : 0);
-    WriteIniInt(p.section, L"EnableAutoPk", p.enableTrainPk ? 1 : 0);
-    WriteIniInt(p.section, L"EnableTreatment", p.enableTreatment ? 1 : 0);
-    WriteIniInt(p.section, L"EnableAlliancePk", p.enableAlliancePk ? 1 : 0);
     WriteIniInt(p.section, L"EnableSell", p.enableSell ? 1 : 0);
     WriteIniInt(p.section, L"SellNpcPreset", p.sellNpcPreset);
     WriteIniText(p.section, L"SelectedSpot", p.selectedSpot);
@@ -2327,9 +2273,6 @@ private:
         SendMessageW(enableShortcut_, BM_SETCHECK, shortcutSettings_.enabled ? BST_CHECKED : BST_UNCHECKED, 0);
         shortcutSettingsButton_ = Make(L"BUTTON", L"TÙY CHỈNH", BS_PUSHBUTTON, 320, 112, 124, 30, IDC_SHORTCUT_SETTINGS); addFont(shortcutSettingsButton_);
         enableFight_ = Make(L"BUTTON", L"AUTO → Đánh quái", BS_AUTOCHECKBOX, 600, 436, 145, 24, IDC_ENABLE_FIGHT); addFont(enableFight_);
-        enableTrainPk_ = Make(L"BUTTON", L"Auto PK", BS_AUTOCHECKBOX, 750, 436, 78, 24, IDC_ENABLE_TRAIN_PK); addFont(enableTrainPk_);
-        enableTreatment_ = Make(L"BUTTON", L"Trị liệu", BS_AUTOCHECKBOX, 832, 436, 82, 24, IDC_ENABLE_TREATMENT); addFont(enableTreatment_);
-        enableAlliancePk_ = Make(L"BUTTON", L"PK LM", BS_AUTOCHECKBOX, 918, 436, 82, 24, IDC_ENABLE_ALLIANCE_PK); addFont(enableAlliancePk_);
         addFont(Make(L"STATIC", L"NPC BÁN:", SS_LEFT | SS_CENTERIMAGE, 18, 472, 62, 27, 0));
         sellNpcCombo_ = Make(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_VSCROLL, 82, 468, 465, 260, IDC_SELL_NPC); addFont(sellNpcCombo_);
         for (const auto& npc : kSellNpcs)
@@ -2359,10 +2302,6 @@ private:
             addFont(Make(L"BUTTON", L"LẤY F8", BS_PUSHBUTTON, 612, rowY[row], 115, 24, captureIds[row]));
             addFont(Make(L"BUTTON", L"TEST", BS_PUSHBUTTON, 737, rowY[row], 90, 24, testIds[row]));
         }
-        captureTrainPkButton_ = Make(L"BUTTON", L"PK F8", BS_PUSHBUTTON, 18, 628, 95, 27, IDC_CAPTURE_TRAIN_PK); addFont(captureTrainPkButton_);
-        captureTreatmentButton_ = Make(L"BUTTON", L"TL F8", BS_PUSHBUTTON, 123, 628, 95, 27, IDC_CAPTURE_TREATMENT); addFont(captureTreatmentButton_);
-        captureAlliancePkButton_ = Make(L"BUTTON", L"LM F8", BS_PUSHBUTTON, 228, 628, 95, 27, IDC_CAPTURE_ALLIANCE_PK); addFont(captureAlliancePkButton_);
-        pkTlLmStatus_ = Make(L"STATIC", L"PK/TL/LM • tọa dùng chung • bật riêng từng acc", SS_LEFT | SS_CENTERIMAGE, 334, 628, 330, 27, 0); addFont(pkTlLmStatus_);
         // Dòng mô tả nội bộ MAIN/FIFO/batch được ẩn khỏi giao diện khách hàng.
         addFont(Make(L"BUTTON", L"QUẢN LÝ NHANH • BÃI TRAIN / TẬP TRUNG / PT", BS_GROUPBOX, 18, 662, 1005, 70, 0));
         addFont(Make(L"BUTTON", L"ÁP BÃI PT", BS_PUSHBUTTON, 32, 686, 100, 28, IDC_APPLY_SPOT_PARTY));
@@ -7507,9 +7446,6 @@ private:
         SendMessageW(enableRevive_, BM_SETCHECK, BST_UNCHECKED, 0);
         SendMessageW(enableConfirm_, BM_SETCHECK, BST_UNCHECKED, 0);
         SendMessageW(enableFight_, BM_SETCHECK, BST_UNCHECKED, 0);
-        if (enableTrainPk_) SendMessageW(enableTrainPk_, BM_SETCHECK, BST_UNCHECKED, 0);
-        if (enableTreatment_) SendMessageW(enableTreatment_, BM_SETCHECK, BST_UNCHECKED, 0);
-        if (enableAlliancePk_) SendMessageW(enableAlliancePk_, BM_SETCHECK, BST_UNCHECKED, 0);
         SendMessageW(enableSell_, BM_SETCHECK, BST_UNCHECKED, 0);
         if (sellNpcCombo_) SendMessageW(sellNpcCombo_, CB_SETCURSEL, 0, 0);
         SetText(sellNpcX_, L"");
@@ -7532,9 +7468,6 @@ private:
         SendMessageW(enableRevive_, BM_SETCHECK, a->profile.enableRevive ? BST_CHECKED : BST_UNCHECKED, 0);
         SendMessageW(enableConfirm_, BM_SETCHECK, a->profile.enableConfirm ? BST_CHECKED : BST_UNCHECKED, 0);
         SendMessageW(enableFight_, BM_SETCHECK, a->profile.enableFight ? BST_CHECKED : BST_UNCHECKED, 0);
-        if (enableTrainPk_) SendMessageW(enableTrainPk_, BM_SETCHECK, a->profile.enableTrainPk ? BST_CHECKED : BST_UNCHECKED, 0);
-        if (enableTreatment_) SendMessageW(enableTreatment_, BM_SETCHECK, a->profile.enableTreatment ? BST_CHECKED : BST_UNCHECKED, 0);
-        if (enableAlliancePk_) SendMessageW(enableAlliancePk_, BM_SETCHECK, a->profile.enableAlliancePk ? BST_CHECKED : BST_UNCHECKED, 0);
         SendMessageW(enableSell_, BM_SETCHECK, a->profile.enableSell ? BST_CHECKED : BST_UNCHECKED, 0);
         SendMessageW(sellNpcCombo_, CB_SETCURSEL, a->profile.sellNpcPreset, 0);
         LoadSellNpcPositionToUi(*a);
@@ -7562,9 +7495,6 @@ private:
         a->profile.enableRevive = SendMessageW(enableRevive_, BM_GETCHECK, 0, 0) == BST_CHECKED;
         a->profile.enableConfirm = SendMessageW(enableConfirm_, BM_GETCHECK, 0, 0) == BST_CHECKED;
         a->profile.enableFight = SendMessageW(enableFight_, BM_GETCHECK, 0, 0) == BST_CHECKED;
-        a->profile.enableTrainPk = enableTrainPk_ && SendMessageW(enableTrainPk_, BM_GETCHECK, 0, 0) == BST_CHECKED;
-        a->profile.enableTreatment = enableTreatment_ && SendMessageW(enableTreatment_, BM_GETCHECK, 0, 0) == BST_CHECKED;
-        a->profile.enableAlliancePk = enableAlliancePk_ && SendMessageW(enableAlliancePk_, BM_GETCHECK, 0, 0) == BST_CHECKED;
         a->profile.enableSell = SendMessageW(enableSell_, BM_GETCHECK, 0, 0) == BST_CHECKED;
         PersistSellNpcPositionEditor(*a);
         const LRESULT sellSel = SendMessageW(sellNpcCombo_, CB_GETCURSEL, 0, 0);
@@ -7753,36 +7683,10 @@ private:
         } else {
             const int index = static_cast<int>(captureSlot_);
             if (index >= 0 && index < static_cast<int>(kClickKeys.size())) {
-                const int sharedIndex = SharedPkTlLmPointIndex(captureSlot_);
-                if (sharedIndex >= 0) {
-                    sharedPkTlLmSettings_.points[static_cast<std::size_t>(sharedIndex)] = captured;
-                    SaveSharedPkTlLmSettings(sharedPkTlLmSettings_);
-                    LogAccount(*captureAccount, L"Đã lưu DÙNG CHUNG ALL ACC • " +
-                               std::wstring(kClickLabels[static_cast<std::size_t>(index)]) + L" = " + PointDescription(captured));
-                } else if (index < static_cast<int>(captureAccount->profile.points.size())) {
+                if (index < static_cast<int>(captureAccount->profile.points.size())) {
                     captureAccount->profile.points[static_cast<std::size_t>(index)] = captured;
                     SaveProfile(captureAccount->profile);
                     LogAccount(*captureAccount, L"Đã lưu " + std::wstring(kClickLabels[static_cast<std::size_t>(index)]) + L" = " + PointDescription(captured));
-                }
-                if (captureSlot_ == ClickSlot::TrainPk) {
-                    captureSlot_ = ClickSlot::TrainPk2;
-                    LogAccount(*captureAccount, L"AUTO PK TRAIN: đưa chuột tới PK 2/2 rồi nhấn F8 • DÙNG CHUNG ALL ACC.");
-                    SetText(selected_, L"PK F8 • đang lấy điểm 2/2 • ALL ACC");
-                    return;
-                }
-                if (captureSlot_ >= ClickSlot::Treatment1 && captureSlot_ < ClickSlot::Treatment4) {
-                    captureSlot_ = static_cast<ClickSlot>(index + 1);
-                    LogAccount(*captureAccount, L"TRỊ LIỆU: tiếp tục F8 điểm " +
-                               std::to_wstring(index - static_cast<int>(ClickSlot::Treatment1) + 2) + L"/4 • ALL ACC.");
-                    SetText(selected_, L"TL F8 • đang lấy điểm " +
-                            std::to_wstring(index - static_cast<int>(ClickSlot::Treatment1) + 2) + L"/4 • ALL ACC");
-                    return;
-                }
-                if (captureSlot_ == ClickSlot::AlliancePk1) {
-                    captureSlot_ = ClickSlot::AlliancePk2;
-                    LogAccount(*captureAccount, L"PK LIÊN MINH: đưa chuột tới LM 2/2 rồi nhấn F8 • DÙNG CHUNG ALL ACC.");
-                    SetText(selected_, L"LM F8 • đang lấy điểm 2/2 • ALL ACC");
-                    return;
                 }
             }
         }
@@ -8261,29 +8165,6 @@ private:
         return true;
     }
 
-    void CaptureTreatmentSetup() {
-        Account* a = SelectedAccount();
-        if (!a) { Log(L"Chưa chọn acc để gán NPC trị liệu"); return; }
-        PersistSelectedEditor();
-        std::wstring error;
-        if (!ReadSnapshot(*a, error, 1200)) {
-            LogAccount(*a, L"TRỊ LIỆU: không đọc được vị trí NPC để gán: " + error);
-            return;
-        }
-        const Snapshot& snap = a->snapshot;
-        if (!snap.mapReady || snap.waitingChangeMap ||
-            (snap.validMask & (ValidMap | ValidPosition)) != (ValidMap | ValidPosition)) {
-            LogAccount(*a, L"TRỊ LIỆU: state chưa ổn định • chưa lưu NPC");
-            return;
-        }
-        sharedPkTlLmSettings_.treatmentTarget = TargetProfile{L"NPC trị liệu", snap.mapID, snap.x, snap.y, true};
-        SaveSharedPkTlLmSettings(sharedPkTlLmSettings_);
-        LogAccount(*a, L"TRỊ LIỆU: đã gán NPC M" + std::to_wstring(snap.mapID) + L" • " +
-                       std::to_wstring(snap.x) + L"," + std::to_wstring(snap.y) +
-                       L" • tiếp theo nhấn F8 đủ 4 điểm click ẩn dùng chung.");
-        BeginCapture(ClickSlot::Treatment1);
-    }
-
     void StartChecked() {
         if (gatherModeActive_ || partyBuildModeActive_) {
             Log(gatherModeActive_ ? L"TẬP TRUNG đang ON • START auto thường bị chặn; hãy tắt TẬP TRUNG trước." :
@@ -8331,8 +8212,8 @@ private:
             } else {
                 a.tradeHeld = false;
                 a.runtime.routeOwnershipResetPending = true;
-                a.runtime.treatmentRoutePending = a.profile.enableTreatment;
-                a.runtime.status = a.profile.enableTreatment
+                a.runtime.treatmentRoutePending = a.runtime.retiredTreatmentEnabled;
+                a.runtime.status = a.runtime.retiredTreatmentEnabled
                     ? L"Đang giám sát • chuẩn hóa ownership AutoPath • chờ NPC trị liệu"
                     : L"Đang giám sát • chuẩn hóa ownership AutoPath";
                 LogAccount(a, L"BẮT ĐẦU CON • bãi " + a.profile.target.name + L" • M" +
@@ -8689,11 +8570,11 @@ private:
             ResetRuntimeForLifeBoundary(a);
             a.deathSessionLatched = false;
             rt.routeOwnershipResetPending = true;
-            rt.treatmentRoutePending = a.profile.enableTreatment;
-            rt.status = a.profile.enableTreatment
+            rt.treatmentRoutePending = a.runtime.retiredTreatmentEnabled;
+            rt.status = a.runtime.retiredTreatmentEnabled
                 ? L"ALIVE • cold restart • ưu tiên NPC trị liệu trước khi về bãi"
                 : L"ALIVE • cold restart + chuẩn hóa ownership AutoPath";
-            LogAccount(a, a.profile.enableTreatment
+            LogAccount(a, a.runtime.retiredTreatmentEnabled
                 ? L"POST-REVIVE: ResetRuntime • arm NPC trị liệu → 4 click ẩn → AutoPath bãi."
                 : L"POST-REVIVE COLD START: ResetRuntime toàn bộ • giữ nguyên setting/bãi/click • phiên auto mới.");
             return true;
@@ -8794,7 +8675,7 @@ private:
     bool CurrentTravelDestinationMap(const Account& a, int& destinationMap) const {
         const RuntimeState& rt = a.runtime;
 
-        if (rt.treatmentRoutePending && a.profile.enableTreatment && sharedPkTlLmSettings_.treatmentTarget.valid) {
+        if (rt.treatmentRoutePending && a.runtime.retiredTreatmentEnabled && sharedPkTlLmSettings_.treatmentTarget.valid) {
             destinationMap = sharedPkTlLmSettings_.treatmentTarget.mapID;
             return destinationMap > 0;
         }
@@ -8846,18 +8727,18 @@ private:
 
     void ArmTrainPkSequence(Account& a, DWORD now, const wchar_t* reason) {
         RuntimeState& rt = a.runtime;
-        if (!pk_tl_lm_logic::ShouldArmTrainPk(a.profile.enableTrainPk, rt.trainPkPending, rt.trainPkPhase)) return;
+        if (!pk_tl_lm_logic::ShouldArmTrainPk(a.runtime.retiredTrainPkEnabled, rt.trainPkPending, rt.trainPkPhase)) return;
         rt.trainPkPending = true;
-        rt.trainPkPhase = pk_tl_lm_logic::FirstTrainPkPhase(a.profile.enableAlliancePk);
+        rt.trainPkPhase = pk_tl_lm_logic::FirstTrainPkPhase(a.runtime.retiredAlliancePkEnabled);
         rt.trainPkTick = now - 500;
-        LogAccount(a, std::wstring(reason) + (a.profile.enableAlliancePk
+        LogAccount(a, std::wstring(reason) + (a.runtime.retiredAlliancePkEnabled
             ? L" • AUTO PK: LM x2 → AUTO→ĐÁNH QUÁI→PK x2."
             : L" • AUTO PK: AUTO→ĐÁNH QUÁI→PK x2."));
     }
 
     bool HandleTrainPkSequence(Account& a, DWORD now) {
         RuntimeState& rt = a.runtime;
-        if (!a.profile.enableTrainPk) {
+        if (!a.runtime.retiredTrainPkEnabled) {
             rt.trainPkPending = false; rt.trainPkPhase = 0; rt.trainPkTick = 0;
             return false;
         }
@@ -8900,7 +8781,7 @@ private:
                 rt.trainPositionMonitorArmed = true;
                 rt.lastTrainPositionCheckTick = now;
             }
-            rt.status = a.profile.enableAlliancePk
+            rt.status = a.runtime.retiredAlliancePkEnabled
                 ? L"PK LM x2→AUTO→ĐÁNH QUÁI→PK x2 xong • tiếp tục train"
                 : L"AUTO→ĐÁNH QUÁI→PK x2 xong • tiếp tục train";
             LogAccount(a, L"AUTO PK 10.6 PASS • enable riêng acc • tọa PK/LM dùng chung.");
@@ -8915,7 +8796,7 @@ private:
     bool HandleTreatmentRoute(Account& a, DWORD now) {
         RuntimeState& rt = a.runtime;
         if (!rt.treatmentRoutePending) return false;
-        if (!a.profile.enableTreatment) { ResetTreatmentRoute(rt); return false; }
+        if (!a.runtime.retiredTreatmentEnabled) { ResetTreatmentRoute(rt); return false; }
         if (!sharedPkTlLmSettings_.treatmentTarget.valid) {
             rt.status = L"TRỊ LIỆU bật nhưng CHƯA GÁN NPC • đưa acc tới NPC rồi bấm TL F8";
             return true;
@@ -9786,7 +9667,7 @@ private:
             rt.fightPhase = 0;
             rt.fightAttempts = 0;
             rt.status = L"Đã về bãi • chuẩn bị bật lại Đánh quái";
-            if (a.profile.enableTrainPk) ArmTrainPkSequence(a, now, L"HỒI BÃI XONG");
+            if (a.runtime.retiredTrainPkEnabled) ArmTrainPkSequence(a, now, L"HỒI BÃI XONG");
             LogAccount(a, L"Đã quay lại bãi sau check lệch • chuẩn bị AUTO→Đánh quái/PK.");
         }
         return true;
@@ -10096,7 +9977,7 @@ private:
                 rt.lastTrainPositionCheckTick = 0;
                 rt.lastAction = Action::Hold;
                 rt.status = L"NONE đã về bãi • tiếp tục AUTO train";
-                if (a.profile.enableTrainPk) ArmTrainPkSequence(a, now, L"VỀ BÃI SAU BÁN");
+                if (a.runtime.retiredTrainPkEnabled) ArmTrainPkSequence(a, now, L"VỀ BÃI SAU BÁN");
                 LogAccount(a, L"AUTO BÁN NONE • đã về bãi train • trả quyền cho train FSM.");
                 return false;
             }
@@ -10282,7 +10163,7 @@ private:
                     return;
                 }
             }
-            if (a.profile.enableTrainPk && (rt.trainPkPending || rt.trainPkPhase != 0)) {
+            if (a.runtime.retiredTrainPkEnabled && (rt.trainPkPending || rt.trainPkPhase != 0)) {
                 if (HandleTrainPkSequence(a, now)) return;
             }
             if (scanSlot > 0 && image_scan_test::IsChildAutoFilterEnabled(scanSlot))
@@ -10331,7 +10212,7 @@ private:
                 LogAccount(a, L"Đã tới bãi và ổn định.");
             }
             rt.wasAtTarget = true;
-            if (a.profile.enableTrainPk) {
+            if (a.runtime.retiredTrainPkEnabled) {
                 ArmTrainPkSequence(a, now, L"ĐẾN BÃI TRAIN");
                 if (HandleTrainPkSequence(a, now)) return;
             } else if (HandleFightClicks(a, now)) return;
@@ -10355,7 +10236,6 @@ private:
         AccountProfile persistent = LoadProfile(newSection);
         const bool persistentHasData = persistent.displayParty != 0 ||
             !persistent.selectedSpot.empty() || persistent.target.valid || persistent.enableSell ||
-            persistent.enableTrainPk || persistent.enableTreatment || persistent.enableAlliancePk ||
             std::any_of(persistent.points.begin(), persistent.points.end(), [](const ClickPoint& p){ return p.valid; });
         if (!persistentHasData) {
             persistent = a.profile;
@@ -10364,9 +10244,6 @@ private:
             if (persistent.displayParty == 0 && a.profile.displayParty != 0) persistent.displayParty = a.profile.displayParty;
             if (persistent.selectedSpot.empty() && !a.profile.selectedSpot.empty()) persistent.selectedSpot = a.profile.selectedSpot;
             if (!persistent.target.valid && a.profile.target.valid) persistent.target = a.profile.target;
-            if (!persistent.enableTrainPk && a.profile.enableTrainPk) persistent.enableTrainPk = true;
-            if (!persistent.enableTreatment && a.profile.enableTreatment) persistent.enableTreatment = true;
-            if (!persistent.enableAlliancePk && a.profile.enableAlliancePk) persistent.enableAlliancePk = true;
             for (std::size_t i = 0; i < persistent.points.size(); ++i) {
                 if (!persistent.points[i].valid && a.profile.points[i].valid) persistent.points[i] = a.profile.points[i];
             }
@@ -10828,15 +10705,6 @@ private:
                     case IDC_CAPTURE_STOP_AUTO_2:
                         BeginCapture(ClickSlot::StopAuto2);
                         break;
-                    case IDC_CAPTURE_TRAIN_PK:
-                        if (HIWORD(wp) == BN_CLICKED) BeginCapture(ClickSlot::TrainPk);
-                        break;
-                    case IDC_CAPTURE_TREATMENT:
-                        if (HIWORD(wp) == BN_CLICKED) CaptureTreatmentSetup();
-                        break;
-                    case IDC_CAPTURE_ALLIANCE_PK:
-                        if (HIWORD(wp) == BN_CLICKED) BeginCapture(ClickSlot::AlliancePk1);
-                        break;
                     case IDC_TEST_AUTO:
                         TestClick(ClickSlot::AutoMenu);
                         break;
@@ -10861,9 +10729,6 @@ private:
                     case IDC_ENABLE_REVIVE:
                     case IDC_ENABLE_CONFIRM:
                     case IDC_ENABLE_FIGHT:
-                    case IDC_ENABLE_TRAIN_PK:
-                    case IDC_ENABLE_TREATMENT:
-                    case IDC_ENABLE_ALLIANCE_PK:
                     case IDC_ENABLE_SELL:
                         if (HIWORD(wp) == BN_CLICKED) PersistSelectedEditor();
                         break;
@@ -10968,13 +10833,6 @@ private:
     HWND enableShortcut_ = nullptr;
     HWND shortcutSettingsButton_ = nullptr;
     HWND enableFight_ = nullptr;
-    HWND enableTrainPk_ = nullptr;
-    HWND enableTreatment_ = nullptr;
-    HWND enableAlliancePk_ = nullptr;
-    HWND captureTrainPkButton_ = nullptr;
-    HWND captureTreatmentButton_ = nullptr;
-    HWND captureAlliancePkButton_ = nullptr;
-    HWND pkTlLmStatus_ = nullptr;
     HWND enableSell_ = nullptr;
     HWND sellNpcCombo_ = nullptr;
     HWND sellNpcX_ = nullptr;
@@ -11052,7 +10910,8 @@ private:
 
     // Global shortcut router/settings. It is opt-in and does not alter unrelated direct routes when disabled.
     ShortcutSettings shortcutSettings_ = LoadShortcutSettings();
-    SharedPkTlLmSettings sharedPkTlLmSettings_ = LoadSharedPkTlLmSettings();
+    // T14: inert runtime-only PK/TL/LM placeholder until T15; no persisted configuration.
+    SharedPkTlLmSettings sharedPkTlLmSettings_{};
     HWND shortcutWindow_ = nullptr;
     HWND shortcutTheme_ = nullptr;
     HWND shortcutSellerCombo_ = nullptr;
