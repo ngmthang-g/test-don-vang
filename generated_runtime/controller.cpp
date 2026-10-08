@@ -35,7 +35,6 @@
 #include "internal_ui_click_logic.h"
 #include "travel_fight_guard_logic.h"
 #include "auto_fight_retry_logic.h"
-#include "thdc_route_logic.h"
 #include "image_scan_test.h"
 #include "automation_bulk_logic.h"
 #include "party_build_logic.h"
@@ -5006,10 +5005,6 @@ private:
         LoadSellNpcPositionToUi(*a);
         LogAccount(*a, L"ĐÃ LẤY TỌA NPC • " + std::wstring(npc.name) + L" • " +
                        std::to_wstring(pos.x) + L"," + std::to_wstring(pos.y));
-    }
-
-    static constexpr std::array<std::pair<int, int>, 7> ThdcRouteCoordinates() {
-        return {{{8257,148110},{890,6895},{3080,2900},{7450,966},{4256,7120},{7620,1242},{690,7200}}};
     }
 
     void LoadTradeSettings() {
@@ -10080,217 +10075,14 @@ private:
         return true;
     }
 
-    bool HandleThdcRoute(Account& a, DWORD now, const TargetProfile& finalTarget) {
-        RuntimeState& rt = a.runtime;
-        const Snapshot& s = a.snapshot;
-        if (rt.shortcutPhase == 99) return true;
-
-        auto continueAfterTransition = [&](bool entryNeedsConfirm) {
-            ResetRobustTravel(rt);
-            ResetTravelFightGuard(rt);
-            rt.shortcutAttempts = 0;
-            rt.shortcutTick = now;
-            if (entryNeedsConfirm) {
-                rt.shortcutPhase = 3;
-                rt.status = L"THĐC • đã vào M10014 • bây giờ mới chờ popup Xác nhận";
-                LogAccount(a, L"THĐC ENTRY MAP PASS • M10000 → M10014 • không xác nhận ở M10000; bắt đầu chờ popup trong tầng 1.");
-                return true;
-            }
-            LogAccount(a, L"THĐC GATE PASS • M" + std::to_wstring(rt.shortcutSourceMap) + L" → M" +
-                          std::to_wstring(rt.shortcutExpectedMap) + L" • đã check MapID tầng kế tiếp.");
-            if (rt.shortcutExpectedMap == finalTarget.mapID) {
-                ResetShortcutRoute(rt);
-                return false;
-            }
-            rt.shortcutPhase = 1;
-            rt.shortcutSourceMap = 0;
-            rt.shortcutExpectedMap = 0;
-            return true;
-        };
-
-        if (rt.shortcutPhase <= 1) {
-            if (!a.snapshotValid || (s.validMask & ValidMap) != ValidMap || !s.mapReady || s.waitingChangeMap) {
-                rt.status = L"THĐC • chờ MapID/MapReady ổn định trước khi chọn cổng tầng kế";
-                return true;
-            }
-            if (s.mapID == finalTarget.mapID) {
-                LogAccount(a, L"THĐC ĐÃ ĐÚNG TẦNG M" + std::to_wstring(finalTarget.mapID) + L" • trả về AutoPath tọa đích.");
-                ResetShortcutRoute(rt);
-                return false;
-            }
-            const thdc_route_logic::GatePlan plan = thdc_route_logic::NextGate(s.mapID, finalTarget.mapID);
-            if (!plan.valid) {
-                FailShortcutRoute(a, L"không có cổng tuần tự hợp lệ từ M" + std::to_wstring(s.mapID) +
-                                     L" tới tầng đích M" + std::to_wstring(finalTarget.mapID));
-                return true;
-            }
-            rt.shortcutSourceMap = plan.sourceMap;
-            rt.shortcutExpectedMap = plan.expectedMap;
-            rt.shortcutPhase = 2;
-            rt.shortcutTick = 0;
-            rt.shortcutAttempts = 0;
-            ResetRobustTravel(rt);
-            ResetTravelFightGuard(rt);
-            LogAccount(a, L"THĐC LEG ARM • cổng nằm trên M" + std::to_wstring(plan.sourceMap) +
-                          L" • chỉ chấp nhận tầng kế M" + std::to_wstring(plan.expectedMap) +
-                          L" • index tọa=" + std::to_wstring(plan.coordinateIndex));
-        }
-
-        if (rt.shortcutPhase == 2) {
-            const thdc_route_logic::GatePlan plan =
-                thdc_route_logic::NextGate(rt.shortcutSourceMap, finalTarget.mapID);
-            if (!plan.valid || plan.expectedMap != rt.shortcutExpectedMap) {
-                FailShortcutRoute(a, L"state cổng THĐC không còn khớp map nguồn/tầng kế");
-                return true;
-            }
-            if (s.mapID == rt.shortcutExpectedMap) {
-                if (!s.mapReady || s.waitingChangeMap) {
-                    rt.status = L"THĐC • đã thấy M" + std::to_wstring(rt.shortcutExpectedMap) + L" • chờ MapReady";
-                    return true;
-                }
-                return continueAfterTransition(plan.confirmAfterTransition);
-            }
-            if (s.mapID != rt.shortcutSourceMap) {
-                FailShortcutRoute(a, L"đi cổng từ M" + std::to_wstring(rt.shortcutSourceMap) +
-                                     L" nhưng sang M" + std::to_wstring(s.mapID) +
-                                     L", khác tầng kế bắt buộc M" + std::to_wstring(rt.shortcutExpectedMap));
-                return true;
-            }
-            if (!a.snapshotValid || !s.mapReady || s.waitingChangeMap ||
-                (s.validMask & (ValidMap | ValidPosition | ValidAutoPath | ValidRiding)) !=
-                    (ValidMap | ValidPosition | ValidAutoPath | ValidRiding)) {
-                rt.status = L"THĐC • chờ state M/X/Y/AutoPath/IsRiding ổn định";
-                return true;
-            }
-
-            const auto coordinates = ThdcRouteCoordinates();
-            const auto gateCoordinate = coordinates[static_cast<std::size_t>(plan.coordinateIndex)];
-            const TargetProfile gate = ShortcutWorldTarget(
-                L"cổng THĐC", plan.sourceMap, gateCoordinate.first, gateCoordinate.second);
-            if (!gate.valid) {
-                FailShortcutRoute(a, L"tọa cổng THĐC index " + std::to_wstring(plan.coordinateIndex) +
-                                     L" trên M" + std::to_wstring(plan.sourceMap) + L" bị thiếu/0");
-                return true;
-            }
-
-            const long long dx = static_cast<long long>(s.x) - gate.x;
-            const long long dy = static_cast<long long>(s.y) - gate.y;
-            const long long d2 = dx * dx + dy * dy;
-            const bool preciseAtGate = d2 <= static_cast<long long>(kPreciseWorldTolerance) * kPreciseWorldTolerance;
-            const bool movementObservedAfterDispatch = rt.shortcutAttempts > 0 && rt.shortcutTick != 0 &&
-                rt.lastMovementTick != 0 && static_cast<LONG>(rt.lastMovementTick - rt.shortcutTick) > 0;
-            const bool stalledThreeSeconds = rt.shortcutAttempts > 0 &&
-                (s.autoPathing || movementObservedAfterDispatch) && rt.lastMovementTick != 0 &&
-                Elapsed(now, rt.lastMovementTick, kLauLanGateStallMs);
-            if (preciseAtGate || stalledThreeSeconds) {
-                rt.shortcutPhase = 4;
-                rt.shortcutTick = now;
-                rt.shortcutAttempts = 0;
-                rt.status = L"THĐC • đã vào cổng trên M" + std::to_wstring(plan.sourceMap) +
-                            L" • không StopPath sớm • chờ đúng M" + std::to_wstring(plan.expectedMap);
-                return true;
-            }
-            if (s.autoPathing || movementObservedAfterDispatch) {
-                rt.status = L"THĐC • đang chạy tới cổng trên M" + std::to_wstring(plan.sourceMap) +
-                            L" tại " + std::to_wstring(gate.x) + L"," + std::to_wstring(gate.y);
-                return true;
-            }
-            if (rt.shortcutAttempts >= kShortcutPathMaxDispatch && rt.shortcutTick != 0 &&
-                Elapsed(now, rt.shortcutTick, kShortcutPathAcceptMs)) {
-                FailShortcutRoute(a, L"đã gửi StartPath cổng THĐC 5 lần nhưng không thấy AutoPath/movement proof");
-                return true;
-            }
-            if (rt.shortcutTick != 0 && !Elapsed(now, rt.shortcutTick, kShortcutPathAcceptMs)) {
-                rt.status = L"THĐC • STARTPATH PASS • chờ tối đa 5s thấy AutoPath/movement proof";
-                return true;
-            }
-
-            const DWORD startPathPassBefore = rt.lastStartPathPassTick;
-            bool arrived = false;
-            (void)HandleRobustTravelDirect(a, now, gate, L"cổng THĐC trên đúng map nguồn", arrived,
-                                           kPreciseWorldTolerance);
-            if (rt.lastStartPathPassTick != 0 && rt.lastStartPathPassTick != startPathPassBefore) {
-                ++rt.shortcutAttempts;
-                rt.shortcutTick = rt.lastStartPathPassTick;
-                rt.lastObservedX = s.x;
-                rt.lastObservedY = s.y;
-                rt.lastMovementTick = rt.shortcutTick;
-            }
-            return true;
-        }
-
-        if (rt.shortcutPhase == 4) {
-            if (s.mapID == rt.shortcutExpectedMap) {
-                if (!s.mapReady || s.waitingChangeMap) {
-                    rt.status = L"THĐC • đã thấy tầng kế M" + std::to_wstring(rt.shortcutExpectedMap) + L" • chờ MapReady";
-                    return true;
-                }
-                return continueAfterTransition(rt.shortcutSourceMap == 10000);
-            }
-            if (s.mapID != rt.shortcutSourceMap) {
-                FailShortcutRoute(a, L"cổng THĐC chuyển sang map ngoài tầng kế bắt buộc: M" + std::to_wstring(s.mapID));
-                return true;
-            }
-            if (Elapsed(now, rt.shortcutTick, 15000)) {
-                FailShortcutRoute(a, L"đã tới cổng nhưng sau 15s MapID chưa đổi sang tầng kế M" +
-                                     std::to_wstring(rt.shortcutExpectedMap));
-            } else {
-                rt.status = L"THĐC • chờ cổng tự dịch M" + std::to_wstring(rt.shortcutSourceMap) +
-                            L" → M" + std::to_wstring(rt.shortcutExpectedMap);
-            }
-            return true;
-        }
-
-        if (rt.shortcutPhase == 3) {
-            if (s.mapID != 10014 || !s.mapReady || s.waitingChangeMap) {
-                rt.status = L"THĐC • chỉ xác nhận sau khi M10014 đã ổn định";
-                return true;
-            }
-            const DWORD confirmWait = rt.shortcutAttempts == 0
-                ? kShortcutConfirmUiReadyMs : kShortcutConfirmRetryMs;
-            if (!Elapsed(now, rt.shortcutTick, confirmWait)) return true;
-            if (ShortcutBridgeCall(a, Command::ConfirmTravelSemantic, 0,
-                                   L"THĐC M10014 • callback Xác nhận popup Chú ý", now, 5000)) {
-                LogAccount(a, L"THĐC ENTRY CONFIRM PASS • Xác nhận đúng một lần sau khi đã vào M10014.");
-                if (finalTarget.mapID == 10014) {
-                    ResetShortcutRoute(rt);
-                    return false;
-                }
-                rt.shortcutPhase = 1;
-                rt.shortcutSourceMap = 0;
-                rt.shortcutExpectedMap = 0;
-                rt.shortcutAttempts = 0;
-                rt.shortcutTick = now;
-                ResetRobustTravel(rt);
-                ResetTravelFightGuard(rt);
-                return true;
-            }
-            ++rt.shortcutAttempts;
-            rt.shortcutTick = now;
-            if (rt.shortcutAttempts >= kShortcutConfirmMaxAttempts) {
-                FailShortcutRoute(a, L"đã vào M10014 nhưng không tìm được popup Xác nhận THĐC sau số lần retry giới hạn");
-            } else {
-                rt.status = L"THĐC • M10014 chờ popup Xác nhận " + std::to_wstring(rt.shortcutAttempts) +
-                            L"/" + std::to_wstring(kShortcutConfirmMaxAttempts);
-            }
-            return true;
-        }
-        return true;
-    }
-
     bool HandleShortcutTravel(Account& a, DWORD now, const TargetProfile& finalTarget) {
         RuntimeState& rt = a.runtime;
         const Snapshot& s = a.snapshot;
         const bool interserverTarget = finalTarget.mapID == 10005 || finalTarget.mapID == 10004 ||
                                        finalTarget.mapID == 10007;
-        const bool thdcTarget = thdc_route_logic::IsThdcFloor(finalTarget.mapID);
         const bool mandatoryInterserver = (s.mapID == 10000 && interserverTarget) ||
                                           rt.shortcutKind == ShortcutKind::InterserverGate;
-        const bool thdcRouteState = thdcTarget && rt.shortcutKind == ShortcutKind::None &&
-                                    rt.shortcutFinalMap == finalTarget.mapID && rt.shortcutPhase != 0;
-        const bool mandatoryThdc = thdcTarget && (thdcRouteState || s.mapID == 10000 ||
-                                   (thdc_route_logic::IsThdcFloor(s.mapID) && s.mapID != finalTarget.mapID));
-        if (!shortcutSettings_.enabled && !mandatoryInterserver && !mandatoryThdc) {
+        if (!shortcutSettings_.enabled && !mandatoryInterserver) {
             if (rt.shortcutKind != ShortcutKind::None) ResetShortcutRoute(rt);
             return false;
         }
@@ -10298,19 +10090,6 @@ private:
             LogAccount(a, L"ĐƯỜNG TẮT: đích đổi giữa chừng → reset waypoint cũ, tính lại theo MapID mới.");
             ResetShortcutRoute(rt);
         }
-        if (rt.shortcutKind == ShortcutKind::None && rt.shortcutPhase != 0 &&
-            rt.shortcutFinalMap != 0 && rt.shortcutFinalMap != finalTarget.mapID) {
-            ResetShortcutRoute(rt);
-        }
-        if (mandatoryThdc && rt.shortcutKind == ShortcutKind::None) {
-            if (!thdcRouteState) {
-                rt.shortcutFinalMap = finalTarget.mapID;
-                rt.shortcutPhase = 1; rt.shortcutTick = now; rt.shortcutAttempts = 0;
-                ResetRobustTravel(rt); ResetTravelFightGuard(rt);
-            }
-            return HandleThdcRoute(a, now, finalTarget);
-        }
-
         if (rt.shortcutKind == ShortcutKind::None) {
             const bool currentKunlun = s.mapID == 75 || s.mapID == 76;
             const bool finalKunlun = finalTarget.mapID == 75 || finalTarget.mapID == 76;
