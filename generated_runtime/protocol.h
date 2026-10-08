@@ -73,11 +73,6 @@ enum class TravelSemantic : std::int32_t {
     DiscardPopup = 8,
     DiscardConfirm = 10,
     PutUpPopup = 9,
-    NamHai = 11,
-    MieuCuong = 12,
-    HoangLongPhu = 13,
-    ThachLam = 14,
-    DaiLy = 15,
 };
 
 enum class ActionResult : std::int32_t {
