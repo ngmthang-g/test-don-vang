@@ -63,7 +63,7 @@ struct AutoFilterResult {
     std::wstring status;
 };
 
-// Scan settings are auto-loaded/saved in LOCALAPPDATA; export/import remains manual backup.
+// Scan settings are auto-loaded/saved in LOCALAPPDATA.
 void EnsurePersistentConfigLoaded();
 void SavePersistentConfig();
 
