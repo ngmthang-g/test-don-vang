@@ -65,6 +65,7 @@ jobs:
         run: |
           $tests = @(
             'route_logic_tests',
+            'travel_network_logic_tests',
             'trade_coordinator_logic_tests',
             'background_ui_logic_tests',
             'fixed_slot_sell_logic_tests',
