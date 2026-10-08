@@ -39,17 +39,23 @@ void TestAutoLootGatesAndInterval() {
     assert(Evaluate(in) == RuntimeGate::AutoFightOff);
 }
 
-void TestAutoSellRoles() {
+bool TestAutoSellRoles() {
     using namespace itemtrade_coordinator;
-    // Standalone/NONE: only full bag triggers independent auto sell.
-    assert(ShouldAutoSell(true, 0, true, 0));
-    assert(!ShouldAutoSell(true, 0, true, 1));
-    assert(!ShouldAutoSell(true, 0, false, 0));
-    // MAIN keeps capacity policy; CON never starts independent sell.
-    assert(ShouldAutoSell(true, 1, true, 8));
-    assert(!ShouldAutoSell(true, 1, true, 9));
-    assert(!ShouldAutoSell(true, 2, true, 0));
-    assert(!ShouldAutoSell(true, 3, true, 0));
+    // T18: all standalone/NONE and child roles are forbidden from auto selling.
+    const bool noNoneSeller = !ShouldAutoSell(true,0,true,0) &&
+        !ShouldAutoSell(true,0,true,8) &&
+        !ShouldAutoSell(false,0,true,0);
+    const bool noChildSeller = !ShouldAutoSell(true,2,true,0) &&
+        !ShouldAutoSell(true,3,true,0) &&
+        !ShouldAutoSell(true,31,true,0);
+    const bool mainQuota = ShouldAutoSell(true,1,true,0) &&
+        ShouldAutoSell(true,1,true,8) &&
+        !ShouldAutoSell(true,1,true,9) &&
+        !ShouldAutoSell(true,1,true,30) &&
+        !ShouldAutoSell(true,1,false,0) &&
+        !ShouldAutoSell(false,1,true,0);
+    assert(noNoneSeller && noChildSeller && mainQuota);
+    return noNoneSeller && noChildSeller && mainQuota;
 }
 
 void MultiAccountSoak() {
@@ -94,7 +100,7 @@ void MultiAccountSoak() {
 
 int main() {
     TestAutoLootGatesAndInterval();
-    TestAutoSellRoles();
+    if (!TestAutoSellRoles()) return 1; // Enforced even under Release /DNDEBUG
     MultiAccountSoak();
     return 0;
 }
