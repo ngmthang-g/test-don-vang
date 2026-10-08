@@ -22,6 +22,12 @@ jobs:
       - name: Checkout cleanup branch
         uses: actions/checkout@v4
 
+      - name: Guard frozen weapon filter C1/C2 source and integration contracts
+        shell: pwsh
+        run: |
+          python scripts/check_weapon_filter_freeze.py
+          if ($LASTEXITCODE -ne 0) { throw 'C1/C2 source freeze regression' }
+
       - name: Configure Windows x64 Release
         shell: pwsh
         run: |
@@ -67,7 +73,8 @@ jobs:
             'sell_filter_grid_v2_logic_tests',
             'auto_loot_logic_tests',
             'integration_hardening_logic_tests',
-            'auto_role_logic_tests'
+            'auto_role_logic_tests',
+            'weapon_filter_snapshot_regression_tests'
           )
 
           foreach ($t in $tests) {
