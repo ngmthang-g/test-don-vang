@@ -28,6 +28,12 @@ jobs:
           python scripts/check_weapon_filter_freeze.py
           if ($LASTEXITCODE -ne 0) { throw 'C1/C2 source freeze regression' }
 
+      - name: Validate resource and protocol scope without renumbering
+        shell: pwsh
+        run: |
+          python scripts/check_build_resource_protocol_scope.py
+          if ($LASTEXITCODE -ne 0) { throw 'T19 resource/protocol scope regression' }
+
       - name: Configure Windows x64 Release
         shell: pwsh
         run: |
@@ -74,7 +80,8 @@ jobs:
             'auto_loot_logic_tests',
             'integration_hardening_logic_tests',
             'auto_role_logic_tests',
-            'weapon_filter_snapshot_regression_tests'
+            'weapon_filter_snapshot_regression_tests',
+            'protocol_wire_contract_tests'
           )
 
           foreach ($t in $tests) {
