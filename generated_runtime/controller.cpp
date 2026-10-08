@@ -166,12 +166,6 @@ constexpr int IDC_DELETE_SPOT = 115;
 constexpr int IDC_ENABLE_REVIVE = 120;
 constexpr int IDC_ENABLE_CONFIRM = 121;
 constexpr int IDC_ENABLE_FIGHT = 122;
-constexpr int IDC_ENABLE_SELL = 123;
-constexpr int IDC_SELL_NPC = 124;
-constexpr int IDC_SELL_NPC_X = 125;
-constexpr int IDC_SELL_NPC_Y = 126;
-constexpr int IDC_SELL_NPC_CAPTURE = 127;
-constexpr int IDC_SELL_NPC_POS = 128;
 constexpr int IDC_CAPTURE_AUTO = 132;
 constexpr int IDC_CAPTURE_ATTACK = 133;
 constexpr int IDC_CAPTURE_STOP_AUTO_2 = 135;
@@ -399,15 +393,6 @@ constexpr int kThienSonMapId = 13;
 constexpr int kThienSonTransitX = 3073;
 constexpr int kThienSonTransitY = 2338;
 
-int AutoSellerPresetForTrainingMap(int mapID) {
-    switch (mapID) {
-        case 71: case 72: return 2; // Ba Nhĩ
-        case 68: case 69: case 73: case 74: case 75: case 76: return 0; // Mã Kiêu Minh
-        case 55: case 70: return 1; // Dược Đại Phu
-        default: return -1;
-    }
-}
-
 struct TradeSequenceStep {
     // v0.2.7 child workflow semantics:
     // target=0 => active CON uses this row's own point.
@@ -553,8 +538,7 @@ struct AccountProfile {
     bool enableRevive = true;
     bool enableConfirm = true;
     bool enableFight = true;
-    bool enableSell = false;
-    int sellNpcPreset = 0;
+    bool enableSell = false; // MAIN count-driven seller only; NONE disabled.
     TargetProfile target{};
     std::array<ClickPoint, 5> points{};
     // Legacy v0.2.3-v0.2.6 per-CON workflow kept only for one-time v0.2.7 migration.
@@ -667,6 +651,8 @@ struct RuntimeState {
     DWORD shortcutTick = 0;
     int shortcutAttempts = 0;
 
+    // T17 inactive NONE FSM compatibility; removed by T18.
+    int retiredNoneSellPreset = 0;
     int sellPhase = 0;
     DWORD sellPhaseTick = 0;
     int sellOpenAttempts = 0;
@@ -1059,9 +1045,8 @@ AccountProfile LoadProfile(const std::wstring& section) {
     p.enableRevive = ReadIniInt(section, L"EnableRevive", 1) != 0;
     p.enableConfirm = ReadIniInt(section, L"EnableConfirm", 1) != 0;
     p.enableFight = ReadIniInt(section, L"EnableFight", 1) != 0;
-    p.enableSell = ReadIniInt(section, L"EnableSell", 0) != 0;
-    p.sellNpcPreset = ReadIniInt(section, L"SellNpcPreset", 0);
-    if (p.sellNpcPreset < 0 || p.sellNpcPreset >= static_cast<int>(kSellNpcs.size())) p.sellNpcPreset = 0;
+    // Legacy NONE seller is ignored; runtime role assignment enables MAIN only.
+    p.enableSell = false;
     p.selectedSpot = ReadIniText(section, L"SelectedSpot");
     p.target.name = ReadIniText(section, L"TargetName");
     p.target.mapID = ReadIniInt(section, L"TargetMap", 0);
@@ -1110,8 +1095,7 @@ void SaveProfile(const AccountProfile& p) {
     WriteIniInt(p.section, L"EnableRevive", p.enableRevive ? 1 : 0);
     WriteIniInt(p.section, L"EnableConfirm", p.enableConfirm ? 1 : 0);
     WriteIniInt(p.section, L"EnableFight", p.enableFight ? 1 : 0);
-    WriteIniInt(p.section, L"EnableSell", p.enableSell ? 1 : 0);
-    WriteIniInt(p.section, L"SellNpcPreset", p.sellNpcPreset);
+    WriteIniInt(p.section, L"EnableSell", (p.tradeRole == kMainTradeRole && p.enableSell) ? 1 : 0);
     WriteIniText(p.section, L"SelectedSpot", p.selectedSpot);
     WriteIniText(p.section, L"TargetName", p.target.name);
     WriteIniInt(p.section, L"TargetMap", p.target.mapID);
@@ -2239,20 +2223,6 @@ private:
         SendMessageW(enableShortcut_, BM_SETCHECK, shortcutSettings_.enabled ? BST_CHECKED : BST_UNCHECKED, 0);
         shortcutSettingsButton_ = Make(L"BUTTON", L"TÙY CHỈNH", BS_PUSHBUTTON, 320, 112, 124, 30, IDC_SHORTCUT_SETTINGS); addFont(shortcutSettingsButton_);
         enableFight_ = Make(L"BUTTON", L"AUTO → Đánh quái", BS_AUTOCHECKBOX, 600, 436, 145, 24, IDC_ENABLE_FIGHT); addFont(enableFight_);
-        addFont(Make(L"STATIC", L"NPC BÁN:", SS_LEFT | SS_CENTERIMAGE, 18, 472, 62, 27, 0));
-        sellNpcCombo_ = Make(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_VSCROLL, 82, 468, 465, 260, IDC_SELL_NPC); addFont(sellNpcCombo_);
-        for (const auto& npc : kSellNpcs)
-            SendMessageW(sellNpcCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(npc.name));
-        SendMessageW(sellNpcCombo_, CB_SETCURSEL, 0, 0);
-        addFont(Make(L"STATIC", L"X:", SS_LEFT | SS_CENTERIMAGE, 557, 472, 18, 27, 0));
-        sellNpcX_ = Make(L"EDIT", L"", WS_BORDER | ES_NUMBER | ES_CENTER, 577, 468, 72, 27, IDC_SELL_NPC_X); addFont(sellNpcX_);
-        addFont(Make(L"STATIC", L"Y:", SS_LEFT | SS_CENTERIMAGE, 658, 472, 18, 27, 0));
-        sellNpcY_ = Make(L"EDIT", L"", WS_BORDER | ES_NUMBER | ES_CENTER, 678, 468, 72, 27, IDC_SELL_NPC_Y); addFont(sellNpcY_);
-        addFont(Make(L"BUTTON", L"LẤY TỌA NPC BÁN", BS_PUSHBUTTON, 760, 468, 190, 27, IDC_SELL_NPC_CAPTURE));
-        addFont(Make(L"STATIC", L"TỌA NPC:", SS_LEFT | SS_CENTERIMAGE, 18, 502, 70, 27, 0));
-        sellNpcPosText_ = Make(L"STATIC", L"CHƯA LẤY", SS_LEFT | SS_CENTERIMAGE | WS_BORDER, 90, 498, 860, 27, IDC_SELL_NPC_POS); addFont(sellNpcPosText_);
-        enableSell_ = Make(L"BUTTON", L"AUTO BÁN ĐỒ KHI TÚI FULL", BS_AUTOCHECKBOX, 18, 526, 280, 27, IDC_ENABLE_SELL); addFont(enableSell_);
-
         // Dòng mô tả kỹ thuật InputSync/callback được ẩn khỏi giao diện khách hàng.
         addFont(Make(L"BUTTON", L"LẤY 3 CLICK CỦA ACC...", BS_PUSHBUTTON, 755, 526, 268, 27, IDC_COPY_CLICKS));
         const int visibleSlots[3] = {static_cast<int>(ClickSlot::AutoMenu), static_cast<int>(ClickSlot::Attack), static_cast<int>(ClickSlot::StopAuto2)};
@@ -3747,18 +3717,6 @@ private:
         ResolveProfileTarget(p);
     }
 
-    void ApplyAutoSellerForTrainingTarget(Account& a, bool writeLog = true) {
-        if (!a.profile.target.valid) return;
-        const int preset = AutoSellerPresetForTrainingMap(a.profile.target.mapID);
-        if (preset < 0 || preset == a.profile.sellNpcPreset) return;
-        a.profile.sellNpcPreset = preset;
-        if (writeLog) {
-            LogAccount(a, L"NPC BÁN TỰ ĐỔI THEO BÃI TRAIN M" + std::to_wstring(a.profile.target.mapID) +
-                          L" → " + kSellNpcs[static_cast<std::size_t>(preset)].name +
-                          L" • người dùng vẫn có thể đổi lại combo NPC bán thủ công.");
-        }
-    }
-
     void RefreshSpotCombo() {
         if (!spotCombo_) return;
         SendMessageW(spotCombo_, CB_RESETCONTENT, 0, 0);
@@ -3780,7 +3738,6 @@ private:
         const std::wstring oldSpot = a->profile.selectedSpot;
         a->profile.selectedSpot = spot.name;
         a->profile.target = spot;
-        ApplyAutoSellerForTrainingTarget(*a);
         SetText(targetName_, spot.name);
         SaveProfile(a->profile);
         if (_wcsicmp(oldSpot.c_str(), spot.name.c_str()) != 0) {
@@ -3890,7 +3847,6 @@ private:
                               _wcsicmp(a.profile.selectedSpot.c_str(), spot.name.c_str()) == 0;
             a.profile.selectedSpot = spot.name;
             a.profile.target = spot;
-            ApplyAutoSellerForTrainingTarget(a, false);
             SaveProfile(a.profile);
             if (!same) {
                 ++changed;
@@ -4709,89 +4665,6 @@ private:
 
 
 
-
-    void LoadSellNpcPositionToUi(const Account& a) {
-        int index = a.profile.sellNpcPreset;
-        if (index < 0 || index >= static_cast<int>(kSellNpcs.size())) index = 0;
-        const SellNpcPosition& pos = sellNpcPositions_[static_cast<std::size_t>(index)];
-        if (pos.valid) {
-            SetText(sellNpcX_, std::to_wstring(pos.x));
-            SetText(sellNpcY_, std::to_wstring(pos.y));
-            SetText(sellNpcPosText_, L"M" + std::to_wstring(kSellNpcs[static_cast<std::size_t>(index)].mapID) + L" • " +
-                                     std::to_wstring(pos.x) + L"," + std::to_wstring(pos.y));
-        } else {
-            SetText(sellNpcX_, L"");
-            SetText(sellNpcY_, L"");
-            SetText(sellNpcPosText_, L"CHƯA LẤY");
-        }
-    }
-
-    void PersistSellNpcPositionEditor(Account& a) {
-        int index = a.profile.sellNpcPreset;
-        if (index < 0 || index >= static_cast<int>(kSellNpcs.size())) index = 0;
-        const std::wstring xText = GetText(sellNpcX_);
-        const std::wstring yText = GetText(sellNpcY_);
-        SellNpcPosition& pos = sellNpcPositions_[static_cast<std::size_t>(index)];
-        if (xText.empty() || yText.empty()) {
-            pos = SellNpcPosition{};
-            SaveSharedSellNpcPositions(sellNpcPositions_);
-            return;
-        }
-        const int x = _wtoi(xText.c_str());
-        const int y = _wtoi(yText.c_str());
-        if (x < 0 || y < 0) {
-            pos = SellNpcPosition{};
-            SaveSharedSellNpcPositions(sellNpcPositions_);
-            return;
-        }
-        pos.x = x;
-        pos.y = y;
-        pos.valid = true;
-        SaveSharedSellNpcPositions(sellNpcPositions_);
-    }
-
-    void OnSellNpcSelectionChanged() {
-        Account* a = SelectedAccount();
-        if (!a) return;
-        PersistSellNpcPositionEditor(*a);
-        const LRESULT sellSel = SendMessageW(sellNpcCombo_, CB_GETCURSEL, 0, 0);
-        if (sellSel != CB_ERR && sellSel >= 0 && sellSel < static_cast<LRESULT>(kSellNpcs.size())) {
-            a->profile.sellNpcPreset = static_cast<int>(sellSel);
-        }
-        SaveProfile(a->profile);
-        LoadSellNpcPositionToUi(*a);
-    }
-
-    void CaptureSellNpcPosition() {
-        Account* a = SelectedAccount();
-        if (!a) { Log(L"Chưa chọn acc để lấy tọa NPC"); return; }
-        std::wstring error;
-        if (!ReadSnapshot(*a, error, 1200)) {
-            LogAccount(*a, L"Không đọc được state để lấy tọa NPC: " + error);
-            return;
-        }
-        int index = a->profile.sellNpcPreset;
-        if (index < 0 || index >= static_cast<int>(kSellNpcs.size())) index = 0;
-        const SellNpcPreset& npc = kSellNpcs[static_cast<std::size_t>(index)];
-        const Snapshot& snap = a->snapshot;
-        if ((snap.validMask & (ValidMap | ValidPosition)) != (ValidMap | ValidPosition)) {
-            LogAccount(*a, L"State chưa có Map/X/Y để lấy tọa NPC");
-            return;
-        }
-        if (snap.mapID != npc.mapID) {
-            LogAccount(*a, L"Không lưu: đang ở MapID " + std::to_wstring(snap.mapID) +
-                           L" nhưng NPC đã chọn thuộc MapID " + std::to_wstring(npc.mapID));
-            return;
-        }
-        SellNpcPosition& pos = sellNpcPositions_[static_cast<std::size_t>(index)];
-        pos.x = snap.x;
-        pos.y = snap.y;
-        pos.valid = true;
-        SaveSharedSellNpcPositions(sellNpcPositions_);
-        LoadSellNpcPositionToUi(*a);
-        LogAccount(*a, L"ĐÃ LẤY TỌA NPC • " + std::wstring(npc.name) + L" • " +
-                       std::to_wstring(pos.x) + L"," + std::to_wstring(pos.y));
-    }
 
     void LoadTradeSettings() {
         tradeEnabled_ = true;
@@ -5695,7 +5568,6 @@ private:
         if(snap.mapID!=npc.mapID){LogAccount(*a,L"KHÔNG LƯU: "+std::wstring(npc.name)+L" thuộc M"+std::to_wstring(npc.mapID)+L", hiện đang M"+std::to_wstring(snap.mapID));return;}
         auto& pos=sellNpcPositions_[static_cast<std::size_t>(sel)]; pos={snap.x,snap.y,true}; SaveSharedSellNpcPositions(sellNpcPositions_);
         RefreshShortcutSellerUi();
-        Account* selected=SelectedAccount(); if(selected) LoadSellNpcPositionToUi(*selected);
         LogAccount(*a,L"ĐÃ GÁN NPC BÁN • "+std::wstring(npc.name)+L" • ResID "+std::to_wstring(npc.npcID)+L" • "+std::to_wstring(pos.x)+L","+std::to_wstring(pos.y));
     }
 
@@ -5846,8 +5718,7 @@ private:
         Account* a = SelectedAccount();
         const bool hasAccount = a != nullptr;
         const int role = a ? a->profile.tradeRole : 0;
-        if (enableSell_) ShowWindow(enableSell_, hasAccount && role == 0 ? SW_SHOW : SW_HIDE);
-        if (sellSequenceButton_) ShowWindow(sellSequenceButton_, hasAccount && (role == 0 || role == kMainTradeRole) ? SW_SHOW : SW_HIDE);
+        if (sellSequenceButton_) ShowWindow(sellSequenceButton_, hasAccount && role == kMainTradeRole ? SW_SHOW : SW_HIDE);
         if (mainTradeSequenceButton_) ShowWindow(mainTradeSequenceButton_, role == 1 ? SW_SHOW : SW_HIDE);
         if (childTradeSequenceButton_) {
             ShowWindow(childTradeSequenceButton_, role >= 2 ? SW_SHOW : SW_HIDE);
@@ -6349,14 +6220,13 @@ private:
         if(mainMacroSellPointLabel_){const std::wstring t=mainMacroSellDialogConfig_.point.valid?PointDescription(mainMacroSellDialogConfig_.point):L"CHƯA LẤY TỌA";SetWindowTextW(mainMacroSellPointLabel_,t.c_str());}
     }
     bool SaveMainMacroSellUi(){
-        Account*a=AccountByPid(mainMacroSellDialogPid_);if(!a){MainSellDialogStatus(L"acc không còn tồn tại");return false;}
+        Account*a=AccountByPid(mainMacroSellDialogPid_);if(!a||a->profile.tradeRole!=kMainTradeRole){MainSellDialogStatus(L"chỉ MAIN được cấu hình macro bán");return false;}
         wchar_t bx[32]{},by[32]{},bd[32]{};GetWindowTextW(mainMacroSellXEdit_,bx,_countof(bx));GetWindowTextW(mainMacroSellYEdit_,by,_countof(by));GetWindowTextW(mainMacroSellDelayEdit_,bd,_countof(bd));
         MainMacroSellConfig cfg=mainMacroSellDialogConfig_;cfg.delayMs=ClampMainMacroDelay(_wtoi(bd));
         if(bx[0]&&by[0]){RECT rc{};if(!GetClientRect(a->game.window,&rc)||rc.right<=0||rc.bottom<=0){MainSellDialogStatus(L"không đọc được client acc");return false;}const int x=_wtoi(bx),y=_wtoi(by);if(x<0||y<0||x>=rc.right||y>=rc.bottom){MainSellDialogStatus(L"X/Y ngoài client acc");return false;}cfg.point={x,y,rc.right,rc.bottom,true};}
         mainMacroSellDialogConfig_=cfg;SaveMainMacroSellConfig(*a,cfg);
         if(a->runtime.sellPhase==3&&a->macroSell.phase==MainMacroSellRuntime::Phase::Blocked&&MainMacroPointValid(cfg.point)){a->macroSell=MainMacroSellRuntime{};a->runtime.sellPhase=0;idleSellEpochDone_=false;}RefreshMainMacroSellUi();
-        if(a->profile.tradeRole==0)MainSellDialogStatus(L"ĐÃ LƯU NONE • delay="+std::to_wstring(cfg.delayMs)+L"ms • seller độc lập 3.6");
-        else MainSellDialogStatus(L"ĐÃ LƯU • MAIN bán Cách 1 raw click • delay="+std::to_wstring(cfg.delayMs)+L"ms");return true;
+        MainSellDialogStatus(L"ĐÃ LƯU • MAIN bán Cách 1 raw click • delay="+std::to_wstring(cfg.delayMs)+L"ms");return true;
     }
     void BeginMainMacroSellCapture(){Account*a=AccountByPid(mainMacroSellDialogPid_);if(!a){MainSellDialogStatus(L"acc không còn tồn tại");return;}mainMacroSellCaptureActive_=true;mainMacroSellCapturePid_=a->game.pid;MainSellDialogStatus(L"ARM F8 • đưa chuột vào đúng TỌA MACRO BÁN trong acc");}
     void CaptureMainMacroSellF8(){if(!mainMacroSellCaptureActive_)return;Account*a=AccountByPid(mainMacroSellCapturePid_);if(!a){mainMacroSellCaptureActive_=false;MainSellDialogStatus(L"F8 FAIL • acc mất");return;}ClickPoint p{};if(!CaptureCursorForMain(*a,p)){MainSellDialogStatus(L"F8: chuột phải nằm trong client acc");return;}mainMacroSellCaptureActive_=false;mainMacroSellDialogConfig_.point=p;SaveMainMacroSellConfig(*a,mainMacroSellDialogConfig_);if(a->runtime.sellPhase==3&&a->macroSell.phase==MainMacroSellRuntime::Phase::Blocked){a->macroSell=MainMacroSellRuntime{};a->runtime.sellPhase=0;idleSellEpochDone_=false;}RefreshMainMacroSellUi();MainSellDialogStatus(L"F8 PASS • đã lưu TỌA MACRO BÁN");}
@@ -6366,9 +6236,9 @@ private:
     static LRESULT CALLBACK MainSellSettingsWndProc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){App*self=reinterpret_cast<App*>(GetWindowLongPtrW(hwnd,GWLP_USERDATA));if(msg==WM_NCCREATE){auto*cs=reinterpret_cast<CREATESTRUCTW*>(lp);self=reinterpret_cast<App*>(cs->lpCreateParams);SetWindowLongPtrW(hwnd,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(self));}return self?self->HandleMainSellSettingsWindow(hwnd,msg,wp,lp):DefWindowProcW(hwnd,msg,wp,lp);}
     LRESULT HandleMainSellSettingsWindow(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){(void)lp;if(msg==WM_COMMAND){switch(LOWORD(wp)){case IDC_MAIN_MACRO_SELL_CAPTURE:if(HIWORD(wp)==BN_CLICKED)BeginMainMacroSellCapture();return 0;case IDC_MAIN_MACRO_SELL_TEST:if(HIWORD(wp)==BN_CLICKED)TestMainMacroSellClick();return 0;case IDC_MAIN_MACRO_SELL_CLEAR:if(HIWORD(wp)==BN_CLICKED)ClearMainMacroSellPoint();return 0;case IDC_MAIN_MACRO_SELL_SAVE:if(HIWORD(wp)==BN_CLICKED)SaveMainMacroSellUi();return 0;case IDC_MAIN_MACRO_SELL_CLOSE:DestroyWindow(hwnd);return 0;}}if(msg==WM_CLOSE){mainMacroSellCaptureActive_=false;DestroyWindow(hwnd);return 0;}if(msg==WM_NCDESTROY){if(mainSellSettingsWindow_==hwnd)mainSellSettingsWindow_=nullptr;mainMacroSellXEdit_=mainMacroSellYEdit_=mainMacroSellDelayEdit_=mainMacroSellPointLabel_=mainMacroSellStatus_=nullptr;return DefWindowProcW(hwnd,msg,wp,lp);}return DefWindowProcW(hwnd,msg,wp,lp);}
     void OpenMainSellSettingsDialog(){
-        Account*a=SelectedAccount();if(!a||(a->profile.tradeRole!=0&&a->profile.tradeRole!=kMainTradeRole)){Log(L"TÙY CHỈNH BÁN chỉ áp dụng acc NONE hoặc MAIN.");return;}mainMacroSellDialogPid_=a->game.pid;
-        const wchar_t* sellDialogTitle = a->profile.tradeRole==0 ? L"TÙY CHỈNH BÁN • ACC NONE • 3.6" : L"TÙY CHỈNH BÁN • MAIN MACRO COUNT-DRIVEN";
-        if(mainSellSettingsWindow_&&IsWindow(mainSellSettingsWindow_)){SetWindowTextW(mainSellSettingsWindow_,sellDialogTitle);ShowWindow(mainSellSettingsWindow_,SW_SHOW);SetForegroundWindow(mainSellSettingsWindow_);RefreshMainMacroSellUi();MainSellDialogStatus(a->profile.tradeRole==0?L"NONE • tọa ô trang bị cố định + delay; seller 3.6 tự đi NPC/bán/verify/quay bãi":L"COUNT-DRIVEN • MAIN bán Cách 1 raw click");return;}
+        Account*a=SelectedAccount();if(!a||a->profile.tradeRole!=kMainTradeRole){Log(L"TÙY CHỈNH BÁN chỉ áp dụng MAIN.");return;}mainMacroSellDialogPid_=a->game.pid;
+        const wchar_t* sellDialogTitle = L"TÙY CHỈNH BÁN • MAIN MACRO COUNT-DRIVEN";
+        if(mainSellSettingsWindow_&&IsWindow(mainSellSettingsWindow_)){SetWindowTextW(mainSellSettingsWindow_,sellDialogTitle);ShowWindow(mainSellSettingsWindow_,SW_SHOW);SetForegroundWindow(mainSellSettingsWindow_);RefreshMainMacroSellUi();MainSellDialogStatus(L"COUNT-DRIVEN • MAIN bán Cách 1 raw click");return;}
         WNDCLASSEXW wc{};wc.cbSize=sizeof(wc);wc.lpfnWndProc=MainSellSettingsWndProc;wc.hInstance=instance_;wc.hCursor=LoadCursor(nullptr,IDC_ARROW);wc.hbrBackground=reinterpret_cast<HBRUSH>(COLOR_WINDOW+1);wc.lpszClassName=L"ThanLongMainMacroSellV18";
         if(!RegisterClassExW(&wc)&&GetLastError()!=ERROR_CLASS_ALREADY_EXISTS){Log(L"Không tạo được class TÙY CHỈNH BÁN");return;}
         mainSellSettingsWindow_=CreateWindowExW(WS_EX_TOOLWINDOW,wc.lpszClassName,sellDialogTitle,WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU,CW_USEDEFAULT,CW_USEDEFAULT,650,440,hwnd_,nullptr,instance_,this);if(!mainSellSettingsWindow_)return;
@@ -6379,7 +6249,7 @@ private:
         mk(L"STATIC",L"TIME GIỮA 2 CLICK BÁN (ms)",SS_LEFT|SS_CENTERIMAGE,18,142,230,28,0);mainMacroSellDelayEdit_=mk(L"EDIT",L"600",WS_BORDER|ES_NUMBER|ES_CENTER,258,142,95,28,IDC_MAIN_MACRO_SELL_DELAY);mk(L"STATIC",L"scheduler non-blocking • không còn Repeat",SS_LEFT|SS_CENTERIMAGE,365,142,253,28,0);
         mk(L"STATIC",L"MAIN bán Cách 1: TRANG BỊ + KHÔNG KHÓA • scan đúng 1 lượt / sell episode.",SS_LEFT|SS_CENTERIMAGE,18,188,600,28,0);
         mainMacroSellStatus_=mk(L"STATIC",L"",SS_LEFT|SS_CENTERIMAGE|WS_BORDER,18,226,600,45,IDC_MAIN_MACRO_SELL_STATUS);mk(L"BUTTON",L"LƯU",BS_DEFPUSHBUTTON,395,286,100,30,IDC_MAIN_MACRO_SELL_SAVE);mk(L"BUTTON",L"ĐÓNG",BS_PUSHBUTTON,510,286,108,30,IDC_MAIN_MACRO_SELL_CLOSE);
-        LoadMainMacroSellConfig(*a,mainMacroSellDialogConfig_,true);RefreshMainMacroSellUi();MainSellDialogStatus(a->profile.tradeRole==0?L"NONE • tọa ô trang bị cố định + delay; seller 3.6 tự đi NPC/bán/verify/quay bãi":L"COUNT-DRIVEN • MAIN bán Cách 1 raw click");ShowWindow(mainSellSettingsWindow_,SW_SHOW);UpdateWindow(mainSellSettingsWindow_);
+        LoadMainMacroSellConfig(*a,mainMacroSellDialogConfig_,true);RefreshMainMacroSellUi();MainSellDialogStatus(L"COUNT-DRIVEN • MAIN bán Cách 1 raw click");ShowWindow(mainSellSettingsWindow_,SW_SHOW);UpdateWindow(mainSellSettingsWindow_);
     }
     void ToggleMainSellSettings(){OpenMainSellSettingsDialog();}
 
@@ -7412,11 +7282,6 @@ private:
         SendMessageW(enableRevive_, BM_SETCHECK, BST_UNCHECKED, 0);
         SendMessageW(enableConfirm_, BM_SETCHECK, BST_UNCHECKED, 0);
         SendMessageW(enableFight_, BM_SETCHECK, BST_UNCHECKED, 0);
-        SendMessageW(enableSell_, BM_SETCHECK, BST_UNCHECKED, 0);
-        if (sellNpcCombo_) SendMessageW(sellNpcCombo_, CB_SETCURSEL, 0, 0);
-        SetText(sellNpcX_, L"");
-        SetText(sellNpcY_, L"");
-        SetText(sellNpcPosText_, L"CHƯA LẤY");
         for (HWND h : pointLabels_) if (h) SetText(h, L"CHƯA LẤY");
         UpdateRoleActionButtons();
     }
@@ -7434,9 +7299,6 @@ private:
         SendMessageW(enableRevive_, BM_SETCHECK, a->profile.enableRevive ? BST_CHECKED : BST_UNCHECKED, 0);
         SendMessageW(enableConfirm_, BM_SETCHECK, a->profile.enableConfirm ? BST_CHECKED : BST_UNCHECKED, 0);
         SendMessageW(enableFight_, BM_SETCHECK, a->profile.enableFight ? BST_CHECKED : BST_UNCHECKED, 0);
-        SendMessageW(enableSell_, BM_SETCHECK, a->profile.enableSell ? BST_CHECKED : BST_UNCHECKED, 0);
-        SendMessageW(sellNpcCombo_, CB_SETCURSEL, a->profile.sellNpcPreset, 0);
-        LoadSellNpcPositionToUi(*a);
         if (a->profile.target.valid) {
             SetText(targetText_, L"M" + std::to_wstring(a->profile.target.mapID) + L" • " +
                                 std::to_wstring(a->profile.target.x) + L"," + std::to_wstring(a->profile.target.y));
@@ -7461,10 +7323,6 @@ private:
         a->profile.enableRevive = SendMessageW(enableRevive_, BM_GETCHECK, 0, 0) == BST_CHECKED;
         a->profile.enableConfirm = SendMessageW(enableConfirm_, BM_GETCHECK, 0, 0) == BST_CHECKED;
         a->profile.enableFight = SendMessageW(enableFight_, BM_GETCHECK, 0, 0) == BST_CHECKED;
-        a->profile.enableSell = SendMessageW(enableSell_, BM_GETCHECK, 0, 0) == BST_CHECKED;
-        PersistSellNpcPositionEditor(*a);
-        const LRESULT sellSel = SendMessageW(sellNpcCombo_, CB_GETCURSEL, 0, 0);
-        if (sellSel != CB_ERR && sellSel >= 0 && sellSel < static_cast<LRESULT>(kSellNpcs.size())) a->profile.sellNpcPreset = static_cast<int>(sellSel);
         SaveProfile(a->profile);
         const int row = SelectedIndex();
         if (row >= 0) UpdateAccountRow(row, *a);
@@ -7491,14 +7349,12 @@ private:
         SaveSharedSpots(spots_);
         a->profile.selectedSpot = name;
         a->profile.target = spot;
-        ApplyAutoSellerForTrainingTarget(*a);
         SaveProfile(a->profile);
         RefreshSpotCombo();
         LoadSelectedProfileToUi();
         for (std::size_t i = 0; i < accounts_.size(); ++i) {
             if (_wcsicmp(accounts_[i]->profile.selectedSpot.c_str(), name.c_str()) == 0) {
                 accounts_[i]->profile.target = spot;
-                ApplyAutoSellerForTrainingTarget(*accounts_[i], false);
                 SaveProfile(accounts_[i]->profile);
                 UpdateAccountRow(static_cast<int>(i), *accounts_[i]);
             }
@@ -9494,8 +9350,8 @@ private:
     // 10.2 — independent seller for role NONE only.
     // MAIN keeps the current quota/macro seller unchanged; CON never enters this FSM.
     TargetProfile IndependentSellNpcTarget(const Account& a) const {
-        const int presetIndex = (a.profile.sellNpcPreset >= 0 && a.profile.sellNpcPreset < static_cast<int>(kSellNpcs.size()))
-            ? a.profile.sellNpcPreset : 0;
+        const int presetIndex = (a.runtime.retiredNoneSellPreset >= 0 && a.runtime.retiredNoneSellPreset < static_cast<int>(kSellNpcs.size()))
+            ? a.runtime.retiredNoneSellPreset : 0;
         const SellNpcPreset& npc = kSellNpcs[static_cast<std::size_t>(presetIndex)];
         TargetProfile target{};
         target.name = npc.name;
@@ -9559,8 +9415,8 @@ private:
                 EnterClientFreeze(a, L"Bridge timeout lúc bắt đầu Auto Sell NONE", now);
             }
         }
-        const int presetIndex = (a.profile.sellNpcPreset >= 0 && a.profile.sellNpcPreset < static_cast<int>(kSellNpcs.size()))
-            ? a.profile.sellNpcPreset : 0;
+        const int presetIndex = (a.runtime.retiredNoneSellPreset >= 0 && a.runtime.retiredNoneSellPreset < static_cast<int>(kSellNpcs.size()))
+            ? a.runtime.retiredNoneSellPreset : 0;
         LogAccount(a, L"NONE • TÚI FULL → bắt đầu Auto bán 3.6 • " +
                       std::wstring(kSellNpcs[static_cast<std::size_t>(presetIndex)].name));
     }
@@ -9707,8 +9563,8 @@ private:
 
         if (rt.sellPhase == 5) {
             if (!Elapsed(now, rt.sellPhaseTick, 500)) return true;
-            const int presetIndex = (a.profile.sellNpcPreset >= 0 && a.profile.sellNpcPreset < static_cast<int>(kSellNpcs.size()))
-                ? a.profile.sellNpcPreset : 0;
+            const int presetIndex = (a.runtime.retiredNoneSellPreset >= 0 && a.runtime.retiredNoneSellPreset < static_cast<int>(kSellNpcs.size()))
+                ? a.runtime.retiredNoneSellPreset : 0;
             const SellNpcPreset& npc = kSellNpcs[static_cast<std::size_t>(presetIndex)];
             Response response{}; std::wstring error;
             if (!a.bridge.Call(Command::BeginBackgroundSell, npc.npcID, 0, 0, response, error, 2200)) {
@@ -10536,17 +10392,8 @@ private:
                     case IDC_ENABLE_REVIVE:
                     case IDC_ENABLE_CONFIRM:
                     case IDC_ENABLE_FIGHT:
-                    case IDC_ENABLE_SELL:
-                        if (HIWORD(wp) == BN_CLICKED) PersistSelectedEditor();
+                                if (HIWORD(wp) == BN_CLICKED) PersistSelectedEditor();
                         break;
-                    case IDC_SELL_NPC:
-                        if (HIWORD(wp) == CBN_SELCHANGE) OnSellNpcSelectionChanged();
-                        break;
-                    case IDC_SELL_NPC_CAPTURE:
-                        if (HIWORD(wp) == BN_CLICKED) CaptureSellNpcPosition();
-                        break;
-                    case IDC_SELL_NPC_X:
-                    case IDC_SELL_NPC_Y:
                     case IDC_TOLERANCE:
                         if (HIWORD(wp) == EN_KILLFOCUS) PersistSelectedEditor();
                         break;
@@ -10640,11 +10487,6 @@ private:
     HWND enableShortcut_ = nullptr;
     HWND shortcutSettingsButton_ = nullptr;
     HWND enableFight_ = nullptr;
-    HWND enableSell_ = nullptr;
-    HWND sellNpcCombo_ = nullptr;
-    HWND sellNpcX_ = nullptr;
-    HWND sellNpcY_ = nullptr;
-    HWND sellNpcPosText_ = nullptr;
     HWND mainSellSettingsWindow_ = nullptr;
     HWND mainMacroSellXEdit_ = nullptr;
     HWND mainMacroSellYEdit_ = nullptr;
