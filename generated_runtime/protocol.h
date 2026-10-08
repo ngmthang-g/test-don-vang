@@ -24,14 +24,9 @@ enum class Command : std::uint32_t {
     Revive = 7,
     StartAutoFight = 8,
     StopAutoFight = 9,
-    BeginBackgroundSell = 10,
-    AdvanceBackgroundSell = 11,
-    SellNextBagItem = 12,
-    CloseBackgroundSell = 13,
+    // 10-13 reserved: retired standalone/NONE background sell wire opcodes.
     ClickInternalPoint = 14,
-    BeginBackgroundTreatment = 15,
-    AdvanceBackgroundTreatment = 16,
-    CloseBackgroundTreatment = 17,
+    // 15-17 reserved: retired PK/TL/LM background treatment wire opcodes.
     ReadCurrency = 18,
     ReadBagPage = 19,
     DropBagItem = 20,
