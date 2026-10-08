@@ -5059,6 +5059,13 @@ private:
                        std::to_wstring(pos.x) + L"," + std::to_wstring(pos.y));
     }
 
+    static std::array<std::pair<int, int>, 7> ThdcCoordinatePairs(const ShortcutSettings& sc) {
+        return {{{sc.thdcEntryX, sc.thdcEntryY}, {sc.thdcFloor1UpX, sc.thdcFloor1UpY},
+                 {sc.thdcFloor2UpX, sc.thdcFloor2UpY}, {sc.thdcFloor2DownX, sc.thdcFloor2DownY},
+                 {sc.thdcFloor3UpX, sc.thdcFloor3UpY}, {sc.thdcFloor3DownX, sc.thdcFloor3DownY},
+                 {sc.thdcFloor4DownX, sc.thdcFloor4DownY}}};
+    }
+
     void LoadTradeSettings() {
         tradeEnabled_ = true;
         tradeRendezvous_.name = L"TỌA GD";
