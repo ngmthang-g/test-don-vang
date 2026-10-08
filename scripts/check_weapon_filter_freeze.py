@@ -21,6 +21,8 @@ FROZEN_BLOBS = {
     "src/bag_filter_v2_logic.h": "77f97dd89546f95d14298d6d5d1295cc1d50f30e",
     "src/con_filter_nosleep_logic.h": "81c2512f4065b5d6ec85f3ed960cc720eb1595bc",
     "src/sell_filter_grid_v2_logic.h": "3fd5b84b5657b53af6eb3634aeb126898b7b9570",
+    "src/equip_point_db.h": "3276b4f98c539c1bdd941412dda168c6c165602e",
+    "resources/equip_points.csv": "89b3138a8ce28e930c17aa48a5de2aaa1fbb006b",
 }
 
 # Mutable controller/bridge/protocol have non-filter cleanup tasks ahead.
