@@ -33,7 +33,15 @@ FORBIDDEN = {
 DELETED = (
     "src/pk_tl_lm_logic.h",
     "src/pk_tl_lm_logic_test.cpp",
+    "src/thdc_route_logic.h",
 )
+
+# The two original 10.6 TravelNetwork files are restored unchanged (Git blob hash),
+# not rewritten with a smaller substitute or accidentally removed again.
+ORIGINAL_TRAVEL_BLOBS = {
+    "src/travel_network_logic.h": "a9ccebfb75af576e1e778a7ea0108524359b077b",
+    "src/travel_network_logic_test.cpp": "2373a5a1d7140617285caebecd4350bd61394938",
+}
 
 REQUIRED = {
     "generated_runtime/controller.cpp": (
@@ -52,6 +60,32 @@ REQUIRED = {
         "image_scan_test::NotifyReviveClicked(",
         "HandleFightClicks(a, now)",
         "Command::ReadBagPage",
+        "ShortcutKind::TravelNetworkExit",
+        "ShortcutKind::TravelNetwork",
+        "HandleTravelNetworkExit3Click(",
+        "travel_network_logic::SelectReturnExit(",
+        "travel_network_logic::SelectNpcTeleport(",
+        "ToProtocolTravelSemantic(",
+        "IsTravelNetworkCentralSourceMap(",
+        "OpenTravelExitWindow()",
+        "BuildTravelExitUi(",
+        "PersistTravelExitUi(",
+        "TravelExitWndProc(",
+        "IDC_SC_EXIT_EDITOR",
+        "shortcutTravelExitCaptureGroup_",
+        'ReadIniInt(section, L"NamHaiExitX"',
+        'ReadIniInt(section, L"MieuCuongExitX"',
+        'ReadIniInt(section, L"HoangLongPhuExitX"',
+        'ReadIniInt(section, L"ThachLamExitX"',
+        'saveExitClicks(L"NamHaiExitClick"',
+        'saveExitClicks(L"MieuCuongExitClick"',
+        'saveExitClicks(L"HoangLongPhuExitClick"',
+        'saveExitClicks(L"ThachLamExitClick"',
+        "TravelSemantic::NamHai",
+        "TravelSemantic::MieuCuong",
+        "TravelSemantic::HoangLongPhu",
+        "TravelSemantic::ThachLam",
+        "TravelSemantic::DaiLy",
     ),
     "generated_runtime/bridge.cpp": (
         "case Command::ReadBagPage:",
@@ -60,6 +94,24 @@ REQUIRED = {
         "case Command::PickNearestLoot:",
         "case Command::ClickTravelSemantic:",
         "case Command::ConfirmTravelSemantic:",
+        "case TravelSemantic::NamHai:",
+        "case TravelSemantic::MieuCuong:",
+        "case TravelSemantic::HoangLongPhu:",
+        "case TravelSemantic::ThachLam:",
+        "case TravelSemantic::DaiLy:",
+    ),
+    "generated_runtime/protocol.h": (
+        "NamHai = 11,",
+        "MieuCuong = 12,",
+        "HoangLongPhu = 13,",
+        "ThachLam = 14,",
+        "DaiLy = 15,",
+    ),
+    "src/travel_network_logic.h": (
+        "SelectReturnExit(",
+        "SelectNpcTeleport(",
+        "kXaTruyenChiNpcId = 45",
+        "kXaTruyenTinNpcId = 522",
     ),
     "src/trade_coordinator_logic.h": (
         "tradeRole == 1 && enableSell",
@@ -100,6 +152,20 @@ def main() -> int:
         if path in tracked or (ROOT / path).exists():
             errors.append(f"deleted source reintroduced: {path}")
 
+    for file_name, expected_blob in ORIGINAL_TRAVEL_BLOBS.items():
+        if file_name not in tracked:
+            errors.append(f"original TravelNetwork file missing: {file_name}")
+            continue
+        try:
+            actual_blob = subprocess.check_output(
+                ["git", "rev-parse", f"HEAD:{file_name}"], cwd=ROOT,
+                text=True, stderr=subprocess.PIPE,
+            ).strip()
+            if actual_blob != expected_blob:
+                errors.append(f"TravelNetwork original 10.6 blob drift: {file_name} {actual_blob}")
+        except subprocess.CalledProcessError:
+            errors.append(f"TravelNetwork file unreadable as tracked HEAD blob: {file_name}")
+
     compiled = {name: re.compile(pattern) for name, pattern in FORBIDDEN.items()}
     for name in active:
         try:
@@ -129,6 +195,15 @@ def main() -> int:
         if token in doc:
             errors.append(f"README_BUILD.txt: legacy build/functionality claim: {token}")
 
+    controller = (ROOT / "generated_runtime/controller.cpp").read_text(encoding="utf-8-sig")
+    for token in (
+        "ShortcutKind::ThdcRoute", "ShortcutKind::InterserverGate",
+        "HandleShortcutInterserverGate(", "HandleThdcRoute(",
+        "thdc_route_logic::", "pk_tl_lm_logic::",
+    ):
+        if token in controller:
+            errors.append(f"retired THDC/interserver route reintroduced: {token}")
+
     if errors:
         print("T20 FINAL ZERO-REFERENCE / PRESERVATION FAIL:")
         for error in errors:
@@ -139,6 +214,7 @@ def main() -> int:
         f"T20 final static audit PASS: {len(active)} tracked active source/build files, "
         f"{len(compiled)} retired-feature families absent, "
         f"{sum(map(len, REQUIRED.values()))} preservation anchors PASS, "
+        f"{len(ORIGINAL_TRAVEL_BLOBS)} original TravelNetwork blobs intact, "
         f"{len(DELETED)} removed files absent"
     )
     return 0
