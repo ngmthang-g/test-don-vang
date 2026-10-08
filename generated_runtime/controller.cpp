@@ -263,27 +263,6 @@ constexpr int IDC_SC_CAPTURE_COORD_6 = 657;
 constexpr int IDC_SC_SELLER_COMBO = 658;
 constexpr int IDC_SC_SELLER_CAPTURE = 659;
 constexpr int IDC_SC_SELLER_LABEL = 660;
-constexpr int IDC_SC_THDC_X_0 = 661;
-constexpr int IDC_SC_THDC_Y_0 = 662;
-constexpr int IDC_SC_THDC_X_1 = 663;
-constexpr int IDC_SC_THDC_Y_1 = 664;
-constexpr int IDC_SC_THDC_X_2 = 665;
-constexpr int IDC_SC_THDC_Y_2 = 666;
-constexpr int IDC_SC_THDC_X_3 = 667;
-constexpr int IDC_SC_THDC_Y_3 = 668;
-constexpr int IDC_SC_THDC_X_4 = 669;
-constexpr int IDC_SC_THDC_Y_4 = 670;
-constexpr int IDC_SC_THDC_X_5 = 671;
-constexpr int IDC_SC_THDC_Y_5 = 672;
-constexpr int IDC_SC_THDC_X_6 = 673;
-constexpr int IDC_SC_THDC_Y_6 = 674;
-constexpr int IDC_SC_CAPTURE_THDC_0 = 675;
-constexpr int IDC_SC_CAPTURE_THDC_1 = 676;
-constexpr int IDC_SC_CAPTURE_THDC_2 = 677;
-constexpr int IDC_SC_CAPTURE_THDC_3 = 678;
-constexpr int IDC_SC_CAPTURE_THDC_4 = 679;
-constexpr int IDC_SC_CAPTURE_THDC_5 = 680;
-constexpr int IDC_SC_CAPTURE_THDC_6 = 681;
 constexpr int IDC_SC_CAPTURE_KUNLUN_CLICK_0 = 682;
 constexpr int IDC_SC_CAPTURE_KUNLUN_CLICK_1 = 683;
 constexpr int IDC_SC_CAPTURE_KUNLUN_CLICK_2 = 684;
@@ -454,14 +433,6 @@ struct ShortcutSettings {
     int postTradeClickDelayMs = 200;
     int postTradeClickRepeat = 1; // 0 = enabled but intentionally do no click.
 
-    // THĐC coordinates belong to the exact source map containing each gate.
-    int thdcEntryX = 8257, thdcEntryY = 148110;             // M10000 -> M10014
-    int thdcFloor1UpX = 890, thdcFloor1UpY = 6895;          // M10014 -> M10015
-    int thdcFloor2UpX = 3080, thdcFloor2UpY = 2900;         // M10015 -> M10016
-    int thdcFloor2DownX = 7450, thdcFloor2DownY = 966;      // M10015 -> M10014
-    int thdcFloor3UpX = 4256, thdcFloor3UpY = 7120;         // M10016 -> M10017
-    int thdcFloor3DownX = 7620, thdcFloor3DownY = 1242;     // M10016 -> M10015
-    int thdcFloor4DownX = 690, thdcFloor4DownY = 7200;      // M10017 -> M10016
 };
 
 enum class ShortcutKind : int {
@@ -471,7 +442,6 @@ enum class ShortcutKind : int {
     FireEnter = 3,
     FireExit = 4,
     InterserverGate = 5,
-    ThdcRoute = 6,
     TravelNetwork = 7,
     TravelNetworkExit = 8,
 };
@@ -1089,20 +1059,6 @@ ShortcutSettings LoadShortcutSettings() {
             loadExitClicks(L"HoangLongPhuExitClick", sc.hoangLongPhuExitClicks);
             loadExitClicks(L"ThachLamExitClick", sc.thachLamExitClicks);
         }
-        sc.thdcEntryX = ReadIniInt(section, L"ThdcEntryX", sc.thdcEntryX);
-        sc.thdcEntryY = ReadIniInt(section, L"ThdcEntryY", sc.thdcEntryY);
-        sc.thdcFloor1UpX = ReadIniInt(section, L"ThdcFloor1UpX", sc.thdcFloor1UpX);
-        sc.thdcFloor1UpY = ReadIniInt(section, L"ThdcFloor1UpY", sc.thdcFloor1UpY);
-        sc.thdcFloor2UpX = ReadIniInt(section, L"ThdcFloor2UpX", sc.thdcFloor2UpX);
-        sc.thdcFloor2UpY = ReadIniInt(section, L"ThdcFloor2UpY", sc.thdcFloor2UpY);
-        sc.thdcFloor2DownX = ReadIniInt(section, L"ThdcFloor2DownX", sc.thdcFloor2DownX);
-        sc.thdcFloor2DownY = ReadIniInt(section, L"ThdcFloor2DownY", sc.thdcFloor2DownY);
-        sc.thdcFloor3UpX = ReadIniInt(section, L"ThdcFloor3UpX", sc.thdcFloor3UpX);
-        sc.thdcFloor3UpY = ReadIniInt(section, L"ThdcFloor3UpY", sc.thdcFloor3UpY);
-        sc.thdcFloor3DownX = ReadIniInt(section, L"ThdcFloor3DownX", sc.thdcFloor3DownX);
-        sc.thdcFloor3DownY = ReadIniInt(section, L"ThdcFloor3DownY", sc.thdcFloor3DownY);
-        sc.thdcFloor4DownX = ReadIniInt(section, L"ThdcFloor4DownX", sc.thdcFloor4DownX);
-        sc.thdcFloor4DownY = ReadIniInt(section, L"ThdcFloor4DownY", sc.thdcFloor4DownY);
     } else if (coordinateVersion >= 3) {
         // One-time migration: old opener -> click #1; #2/#3 stay invalid.
         TimedClickPoint& first = sc.kunlunExitClicks[0];
@@ -1169,13 +1125,6 @@ void SaveShortcutSettings(const ShortcutSettings& sc) {
     saveExitClicks(L"MieuCuongExitClick", sc.mieuCuongExitClicks);
     saveExitClicks(L"HoangLongPhuExitClick", sc.hoangLongPhuExitClicks);
     saveExitClicks(L"ThachLamExitClick", sc.thachLamExitClicks);
-    WriteIniInt(section, L"ThdcEntryX", sc.thdcEntryX); WriteIniInt(section, L"ThdcEntryY", sc.thdcEntryY);
-    WriteIniInt(section, L"ThdcFloor1UpX", sc.thdcFloor1UpX); WriteIniInt(section, L"ThdcFloor1UpY", sc.thdcFloor1UpY);
-    WriteIniInt(section, L"ThdcFloor2UpX", sc.thdcFloor2UpX); WriteIniInt(section, L"ThdcFloor2UpY", sc.thdcFloor2UpY);
-    WriteIniInt(section, L"ThdcFloor2DownX", sc.thdcFloor2DownX); WriteIniInt(section, L"ThdcFloor2DownY", sc.thdcFloor2DownY);
-    WriteIniInt(section, L"ThdcFloor3UpX", sc.thdcFloor3UpX); WriteIniInt(section, L"ThdcFloor3UpY", sc.thdcFloor3UpY);
-    WriteIniInt(section, L"ThdcFloor3DownX", sc.thdcFloor3DownX); WriteIniInt(section, L"ThdcFloor3DownY", sc.thdcFloor3DownY);
-    WriteIniInt(section, L"ThdcFloor4DownX", sc.thdcFloor4DownX); WriteIniInt(section, L"ThdcFloor4DownY", sc.thdcFloor4DownY);
     for (const wchar_t* key : {L"KunLunOpenClickX", L"KunLunOpenClickY", L"KunLunOpenClickW", L"KunLunOpenClickH"})
         WritePrivateProfileStringW(section.c_str(), key, nullptr, ConfigPath().c_str());
     FlushIni();
@@ -5059,11 +5008,8 @@ private:
                        std::to_wstring(pos.x) + L"," + std::to_wstring(pos.y));
     }
 
-    static std::array<std::pair<int, int>, 7> ThdcCoordinatePairs(const ShortcutSettings& sc) {
-        return {{{sc.thdcEntryX, sc.thdcEntryY}, {sc.thdcFloor1UpX, sc.thdcFloor1UpY},
-                 {sc.thdcFloor2UpX, sc.thdcFloor2UpY}, {sc.thdcFloor2DownX, sc.thdcFloor2DownY},
-                 {sc.thdcFloor3UpX, sc.thdcFloor3UpY}, {sc.thdcFloor3DownX, sc.thdcFloor3DownY},
-                 {sc.thdcFloor4DownX, sc.thdcFloor4DownY}}};
+    static constexpr std::array<std::pair<int, int>, 7> ThdcRouteCoordinates() {
+        return {{{8257,148110},{890,6895},{3080,2900},{7450,966},{4256,7120},{7620,1242},{690,7200}}};
     }
 
     void LoadTradeSettings() {
@@ -5861,7 +5807,7 @@ private:
     void LoadShortcutSettingsToUi() {
         if (!shortcutWindow_) return;
         if (shortcutTheme_) SendMessageW(shortcutTheme_, CB_SETCURSEL, shortcutSettings_.theme, 0);
-        const int values[28] = {
+        const int values[14] = {
             shortcutSettings_.kunlunNpcX, shortcutSettings_.kunlunNpcY,
             shortcutSettings_.xaTruyenX, shortcutSettings_.xaTruyenY,
             shortcutSettings_.ngaiX, shortcutSettings_.ngaiY,
@@ -5869,13 +5815,6 @@ private:
             shortcutSettings_.thanhLienGateX, shortcutSettings_.thanhLienGateY,
             shortcutSettings_.phamLienGateX, shortcutSettings_.phamLienGateY,
             shortcutSettings_.khoVinhGateX, shortcutSettings_.khoVinhGateY,
-            shortcutSettings_.thdcEntryX, shortcutSettings_.thdcEntryY,
-            shortcutSettings_.thdcFloor1UpX, shortcutSettings_.thdcFloor1UpY,
-            shortcutSettings_.thdcFloor2UpX, shortcutSettings_.thdcFloor2UpY,
-            shortcutSettings_.thdcFloor2DownX, shortcutSettings_.thdcFloor2DownY,
-            shortcutSettings_.thdcFloor3UpX, shortcutSettings_.thdcFloor3UpY,
-            shortcutSettings_.thdcFloor3DownX, shortcutSettings_.thdcFloor3DownY,
-            shortcutSettings_.thdcFloor4DownX, shortcutSettings_.thdcFloor4DownY,
         };
         for (std::size_t i = 0; i < shortcutCoordEdits_.size(); ++i) {
             if (shortcutCoordEdits_[i]) SetWindowTextW(shortcutCoordEdits_[i], std::to_wstring(values[i]).c_str());
@@ -5915,13 +5854,6 @@ private:
             shortcutSettings_.thanhLienGateX = read(8, shortcutSettings_.thanhLienGateX); shortcutSettings_.thanhLienGateY = read(9, shortcutSettings_.thanhLienGateY);
             shortcutSettings_.phamLienGateX = read(10, shortcutSettings_.phamLienGateX); shortcutSettings_.phamLienGateY = read(11, shortcutSettings_.phamLienGateY);
             shortcutSettings_.khoVinhGateX = read(12, shortcutSettings_.khoVinhGateX); shortcutSettings_.khoVinhGateY = read(13, shortcutSettings_.khoVinhGateY);
-            shortcutSettings_.thdcEntryX = read(14, shortcutSettings_.thdcEntryX); shortcutSettings_.thdcEntryY = read(15, shortcutSettings_.thdcEntryY);
-            shortcutSettings_.thdcFloor1UpX = read(16, shortcutSettings_.thdcFloor1UpX); shortcutSettings_.thdcFloor1UpY = read(17, shortcutSettings_.thdcFloor1UpY);
-            shortcutSettings_.thdcFloor2UpX = read(18, shortcutSettings_.thdcFloor2UpX); shortcutSettings_.thdcFloor2UpY = read(19, shortcutSettings_.thdcFloor2UpY);
-            shortcutSettings_.thdcFloor2DownX = read(20, shortcutSettings_.thdcFloor2DownX); shortcutSettings_.thdcFloor2DownY = read(21, shortcutSettings_.thdcFloor2DownY);
-            shortcutSettings_.thdcFloor3UpX = read(22, shortcutSettings_.thdcFloor3UpX); shortcutSettings_.thdcFloor3UpY = read(23, shortcutSettings_.thdcFloor3UpY);
-            shortcutSettings_.thdcFloor3DownX = read(24, shortcutSettings_.thdcFloor3DownX); shortcutSettings_.thdcFloor3DownY = read(25, shortcutSettings_.thdcFloor3DownY);
-            shortcutSettings_.thdcFloor4DownX = read(26, shortcutSettings_.thdcFloor4DownX); shortcutSettings_.thdcFloor4DownY = read(27, shortcutSettings_.thdcFloor4DownY);
         }
         for (std::size_t i = 0; i < shortcutSettings_.kunlunExitClicks.size(); ++i) {
             TimedClickPoint& click = shortcutSettings_.kunlunExitClicks[i];
@@ -5937,7 +5869,7 @@ private:
         if (shortcutPostTradeRepeat_)
             shortcutSettings_.postTradeClickRepeat = ParseEditInt(shortcutPostTradeRepeat_, shortcutSettings_.postTradeClickRepeat, 0, 999);
         SaveShortcutSettings(shortcutSettings_);
-        if (logSaved) Log(L"TÙY CHỈNH 10.2: đã lưu tọa + 3 click CLS Time/Delay + 7 cổng THĐC + Click Sau Target Main.");
+        if (logSaved) Log(L"TÙY CHỈNH 10.2: đã lưu tọa + 3 click CLS Time/Delay + Click Sau Target Main.");
     }
 
     void ApplyShortcutPanelTheme(HWND hwnd) {
@@ -5948,23 +5880,17 @@ private:
     }
 
     void CaptureShortcutCoordinate(int index) {
-        if (index < 0 || index >= 14) return;
+        if (index < 0 || index >= 7) return;
         Account* a = SelectedAccount();
         if (!a) { Log(L"TÙY CHỈNH TỌA: chọn 1 acc đang đứng đúng điểm trước."); return; }
         std::wstring error;
         if (!ReadSnapshot(*a, error, 1200)) { LogAccount(*a, L"Không đọc được state để LẤY TỌA: " + error); return; }
         const Snapshot& snap = a->snapshot;
         if ((snap.validMask & (ValidMap | ValidPosition)) != (ValidMap | ValidPosition)) { LogAccount(*a, L"State chưa có Map/X/Y để LẤY TỌA"); return; }
-        static constexpr int expectedMaps[14] = {
-            75, 5, 5, 12, 10000, 10000, 10000,
-            10000, 10014, 10015, 10015, 10016, 10016, 10017
-        };
-        static constexpr const wchar_t* labels[14] = {
+        static constexpr int expectedMaps[7] = {75, 5, 5, 12, 10000, 10000, 10000};
+        static constexpr const wchar_t* labels[7] = {
             L"NPC RỜI Côn Lôn Sơn", L"Xa Truyền Bình • ResID 387 • ĐI VÀO Côn Lôn", L"Ngải Ni Ngoã Nhĩ • ResID 913",
-            L"Tinh Túc Hải điểm ra", L"Cổng Thanh Liên Trại", L"Cổng Phàm Liên Trại", L"Cổng Khô Vinh Đạo",
-            L"THĐC: M10000 → tầng 1", L"THĐC: tầng 1 M10014 → tầng 2", L"THĐC: tầng 2 M10015 → tầng 3",
-            L"THĐC: tầng 2 M10015 → tầng 1", L"THĐC: tầng 3 M10016 → tầng 4",
-            L"THĐC: tầng 3 M10016 → tầng 2", L"THĐC: tầng 4 M10017 → tầng 3"
+            L"Tinh Túc Hải điểm ra", L"Cổng Thanh Liên Trại", L"Cổng Phàm Liên Trại", L"Cổng Khô Vinh Đạo"
         };
         if (snap.mapID != expectedMaps[index]) {
             LogAccount(*a, std::wstring(L"KHÔNG LƯU ") + labels[index] + L": đang M" + std::to_wstring(snap.mapID) +
@@ -5972,16 +5898,10 @@ private:
             return;
         }
         PersistShortcutSettingsFromUi(false);
-        int* xs[14] = {&shortcutSettings_.kunlunNpcX,&shortcutSettings_.xaTruyenX,&shortcutSettings_.ngaiX,&shortcutSettings_.tinhTucX,
-                       &shortcutSettings_.thanhLienGateX,&shortcutSettings_.phamLienGateX,&shortcutSettings_.khoVinhGateX,
-                       &shortcutSettings_.thdcEntryX,&shortcutSettings_.thdcFloor1UpX,&shortcutSettings_.thdcFloor2UpX,
-                       &shortcutSettings_.thdcFloor2DownX,&shortcutSettings_.thdcFloor3UpX,&shortcutSettings_.thdcFloor3DownX,
-                       &shortcutSettings_.thdcFloor4DownX};
-        int* ys[14] = {&shortcutSettings_.kunlunNpcY,&shortcutSettings_.xaTruyenY,&shortcutSettings_.ngaiY,&shortcutSettings_.tinhTucY,
-                       &shortcutSettings_.thanhLienGateY,&shortcutSettings_.phamLienGateY,&shortcutSettings_.khoVinhGateY,
-                       &shortcutSettings_.thdcEntryY,&shortcutSettings_.thdcFloor1UpY,&shortcutSettings_.thdcFloor2UpY,
-                       &shortcutSettings_.thdcFloor2DownY,&shortcutSettings_.thdcFloor3UpY,&shortcutSettings_.thdcFloor3DownY,
-                       &shortcutSettings_.thdcFloor4DownY};
+        int* xs[7] = {&shortcutSettings_.kunlunNpcX,&shortcutSettings_.xaTruyenX,&shortcutSettings_.ngaiX,&shortcutSettings_.tinhTucX,
+                      &shortcutSettings_.thanhLienGateX,&shortcutSettings_.phamLienGateX,&shortcutSettings_.khoVinhGateX};
+        int* ys[7] = {&shortcutSettings_.kunlunNpcY,&shortcutSettings_.xaTruyenY,&shortcutSettings_.ngaiY,&shortcutSettings_.tinhTucY,
+                      &shortcutSettings_.thanhLienGateY,&shortcutSettings_.phamLienGateY,&shortcutSettings_.khoVinhGateY};
         *xs[index]=snap.x; *ys[index]=snap.y;
         SaveShortcutSettings(shortcutSettings_); LoadShortcutSettingsToUi();
         for (auto& item : accounts_) if (item) ResetShortcutRoute(item->runtime);
@@ -6007,7 +5927,7 @@ private:
     }
 
     void BuildShortcutSettingsUi(HWND parent) {
-        MakeIn(parent, L"STATIC", L"TÙY CHỈNH 10.2 • THĐC đã điền sẵn đúng map chứa cổng; mọi tọa đều sửa tay hoặc LẤY TỌA. 0,0 = chưa gán / fail-closed.",
+        MakeIn(parent, L"STATIC", L"TÙY CHỈNH 10.2 • mọi tọa đường tắt đều sửa tay hoặc LẤY TỌA. 0,0 = chưa gán / fail-closed.",
                SS_LEFT | SS_CENTERIMAGE | WS_BORDER, 15, 12, 930, 32, 0);
         MakeIn(parent, L"STATIC", L"Theme:", SS_LEFT | SS_CENTERIMAGE, 15, 54, 60, 25, 0);
         shortcutTheme_ = MakeIn(parent, WC_COMBOBOXW, L"", CBS_DROPDOWNLIST, 78, 52, 170, 160, IDC_SC_THEME);
@@ -6024,17 +5944,7 @@ private:
             {L"Cổng Phàm Liên • từ M10000", IDC_SC_PHAMLIEN_X, IDC_SC_PHAMLIEN_Y, IDC_SC_CAPTURE_COORD_5},
             {L"Cổng Khô Vinh • từ M10000", IDC_SC_KHOVINH_X, IDC_SC_KHOVINH_Y, IDC_SC_CAPTURE_COORD_6},
         };
-        const Row thdcRows[7] = {
-            {L"M10000 → THĐC tầng 1", IDC_SC_THDC_X_0, IDC_SC_THDC_Y_0, IDC_SC_CAPTURE_THDC_0},
-            {L"M10014 tầng 1 → tầng 2", IDC_SC_THDC_X_1, IDC_SC_THDC_Y_1, IDC_SC_CAPTURE_THDC_1},
-            {L"M10015 tầng 2 → tầng 3", IDC_SC_THDC_X_2, IDC_SC_THDC_Y_2, IDC_SC_CAPTURE_THDC_2},
-            {L"M10015 tầng 2 → tầng 1", IDC_SC_THDC_X_3, IDC_SC_THDC_Y_3, IDC_SC_CAPTURE_THDC_3},
-            {L"M10016 tầng 3 → tầng 4", IDC_SC_THDC_X_4, IDC_SC_THDC_Y_4, IDC_SC_CAPTURE_THDC_4},
-            {L"M10016 tầng 3 → tầng 2", IDC_SC_THDC_X_5, IDC_SC_THDC_Y_5, IDC_SC_CAPTURE_THDC_5},
-            {L"M10017 tầng 4 → tầng 3", IDC_SC_THDC_X_6, IDC_SC_THDC_Y_6, IDC_SC_CAPTURE_THDC_6},
-        };
         MakeIn(parent,L"STATIC",L"ĐƯỜNG TẮT HIỆN CÓ",SS_LEFT|SS_CENTERIMAGE|WS_BORDER,15,86,450,25,0);
-        MakeIn(parent,L"STATIC",L"TẦN HOÀNG ĐỊA CUNG • TỌA NẰM TRÊN MAP NGUỒN GHI Ở TỪNG DÒNG",SS_LEFT|SS_CENTERIMAGE|WS_BORDER,490,86,455,25,0);
         auto drawCoordinateRow = [&](int x, int y, const Row& row, std::size_t editOffset) {
             MakeIn(parent,L"STATIC",row.label,SS_LEFT|SS_CENTERIMAGE,x,y,220,27,0);
             MakeIn(parent,L"STATIC",L"X",SS_CENTERIMAGE,x+220,y,14,27,0);
@@ -6053,9 +5963,6 @@ private:
             const int visualIndex = i > 1 ? i - 1 : i;
             drawCoordinateRow(15, 116+visualIndex*36, rows[i], static_cast<std::size_t>(i*2));
         }
-        for (int i=0;i<7;++i)
-            drawCoordinateRow(490, 116+i*36, thdcRows[i], static_cast<std::size_t>(14+i*2));
-
         MakeIn(parent,L"STATIC",L"RỜI CÔN LÔN • ĐÚNG 3 TRYCLICKUI • Time (ms)=chờ trước click, Delay (ms)=chờ sau click; không dùng callback Đại Lý/Xác nhận.",
                SS_LEFT|SS_CENTERIMAGE|WS_BORDER,15,380,930,30,0);
         static constexpr const wchar_t* clickNames[3] = {L"1. Mở NPC rời CLS", L"2. Chọn Đại Lý", L"3. Xác nhận"};
@@ -6076,10 +5983,6 @@ private:
         shortcutSellerCoordLabel_ = nullptr;
         MakeIn(parent,L"STATIC",L"NPC BÁN / XA TRUYỀN BÌNH: chỉ dùng tọa ở màn hình chính → chọn NPC bán → LẤY VỊ TRÍ. Không còn nguồn tọa thứ hai trong TÙY CHỈNH.",
                SS_LEFT|SS_CENTERIMAGE|WS_BORDER,15,542,930,38,0);
-        MakeIn(parent,L"STATIC",
-               L"THĐC: từ M10000 đi cổng vào M10014 rồi mới Xác nhận popup. Sau đó mỗi tầng chỉ đi đúng cổng trên map hiện tại và phải check MapID tầng kế tiếp; không nhảy tầng.",
-               SS_LEFT|WS_BORDER,15,588,930,52,0);
-
         MakeIn(parent,L"STATIC",L"CLICK SAU TARGET MAIN • CHỈ CON • mở menu trước callback Giao dịch, sau đó mới chạy CHUỖI GD",
                SS_LEFT|SS_CENTERIMAGE|WS_BORDER,15,648,930,30,0);
         shortcutPostTradeEnabled_=MakeIn(parent,L"BUTTON",L"Bật",BS_AUTOCHECKBOX,15,686,72,28,IDC_SC_POST_TRADE_ENABLED);
@@ -6146,9 +6049,6 @@ private:
                     case IDC_SC_CAPTURE_COORD_0: case IDC_SC_CAPTURE_COORD_2: case IDC_SC_CAPTURE_COORD_3:
                     case IDC_SC_CAPTURE_COORD_4: case IDC_SC_CAPTURE_COORD_5: case IDC_SC_CAPTURE_COORD_6:
                         if(HIWORD(wp)==BN_CLICKED) CaptureShortcutCoordinate(LOWORD(wp)-IDC_SC_CAPTURE_COORD_0); return 0;
-                    case IDC_SC_CAPTURE_THDC_0: case IDC_SC_CAPTURE_THDC_1: case IDC_SC_CAPTURE_THDC_2:
-                    case IDC_SC_CAPTURE_THDC_3: case IDC_SC_CAPTURE_THDC_4: case IDC_SC_CAPTURE_THDC_5: case IDC_SC_CAPTURE_THDC_6:
-                        if(HIWORD(wp)==BN_CLICKED) CaptureShortcutCoordinate(7+LOWORD(wp)-IDC_SC_CAPTURE_THDC_0); return 0;
                     case IDC_SC_SELLER_CAPTURE: if(HIWORD(wp)==BN_CLICKED) CaptureShortcutSellerPosition(); return 0;
                     case IDC_SC_SELLER_COMBO: if(HIWORD(wp)==CBN_SELCHANGE) RefreshShortcutSellerUi(); return 0;
                     case IDC_SC_POST_TRADE_CAPTURE: if(HIWORD(wp)==BN_CLICKED) BeginPostTradeClickCapture(); return 0;
@@ -10263,7 +10163,7 @@ private:
                 return true;
             }
 
-            const auto coordinates = ThdcCoordinatePairs(shortcutSettings_);
+            const auto coordinates = ThdcRouteCoordinates();
             const auto gateCoordinate = coordinates[static_cast<std::size_t>(plan.coordinateIndex)];
             const TargetProfile gate = ShortcutWorldTarget(
                 L"cổng THĐC", plan.sourceMap, gateCoordinate.first, gateCoordinate.second);
@@ -10386,9 +10286,10 @@ private:
         const bool thdcTarget = thdc_route_logic::IsThdcFloor(finalTarget.mapID);
         const bool mandatoryInterserver = (s.mapID == 10000 && interserverTarget) ||
                                           rt.shortcutKind == ShortcutKind::InterserverGate;
-        const bool mandatoryThdc = (thdcTarget && (s.mapID == 10000 ||
-                                    (thdc_route_logic::IsThdcFloor(s.mapID) && s.mapID != finalTarget.mapID))) ||
-                                   rt.shortcutKind == ShortcutKind::ThdcRoute;
+        const bool thdcRouteState = thdcTarget && rt.shortcutKind == ShortcutKind::None &&
+                                    rt.shortcutFinalMap == finalTarget.mapID && rt.shortcutPhase != 0;
+        const bool mandatoryThdc = thdcTarget && (thdcRouteState || s.mapID == 10000 ||
+                                   (thdc_route_logic::IsThdcFloor(s.mapID) && s.mapID != finalTarget.mapID));
         if (!shortcutSettings_.enabled && !mandatoryInterserver && !mandatoryThdc) {
             if (rt.shortcutKind != ShortcutKind::None) ResetShortcutRoute(rt);
             return false;
@@ -10397,17 +10298,24 @@ private:
             LogAccount(a, L"ĐƯỜNG TẮT: đích đổi giữa chừng → reset waypoint cũ, tính lại theo MapID mới.");
             ResetShortcutRoute(rt);
         }
+        if (rt.shortcutKind == ShortcutKind::None && rt.shortcutPhase != 0 &&
+            rt.shortcutFinalMap != 0 && rt.shortcutFinalMap != finalTarget.mapID) {
+            ResetShortcutRoute(rt);
+        }
+        if (mandatoryThdc && rt.shortcutKind == ShortcutKind::None) {
+            if (!thdcRouteState) {
+                rt.shortcutFinalMap = finalTarget.mapID;
+                rt.shortcutPhase = 1; rt.shortcutTick = now; rt.shortcutAttempts = 0;
+                ResetRobustTravel(rt); ResetTravelFightGuard(rt);
+            }
+            return HandleThdcRoute(a, now, finalTarget);
+        }
 
         if (rt.shortcutKind == ShortcutKind::None) {
             const bool currentKunlun = s.mapID == 75 || s.mapID == 76;
             const bool finalKunlun = finalTarget.mapID == 75 || finalTarget.mapID == 76;
             const bool currentFire = s.mapID == 55 || s.mapID == 70;
-            // M10000/THĐC portals are mandatory world routing, not optional shortcuts.
-            // They must work even when the ĐƯỜNG TẮT checkbox is off.
-            if (thdcTarget && s.mapID != finalTarget.mapID &&
-                (s.mapID == 10000 || thdc_route_logic::IsThdcFloor(s.mapID))) {
-                rt.shortcutKind = ShortcutKind::ThdcRoute;
-            } else if (s.mapID == 10000 && interserverTarget) {
+            if (s.mapID == 10000 && interserverTarget) {
                 rt.shortcutKind = ShortcutKind::InterserverGate;
             } else if (!shortcutSettings_.enabled) {
                 return false;
@@ -10484,8 +10392,6 @@ private:
                 const TargetProfile gate = ShortcutWorldTarget(L"cổng liên-server", 10000, x, y);
                 return HandleShortcutInterserverGate(a, now, finalTarget, gate);
             }
-            case ShortcutKind::ThdcRoute:
-                return HandleThdcRoute(a, now, finalTarget);
             case ShortcutKind::TravelNetworkExit: {
                 const auto plan=travel_network_logic::SelectReturnExit(rt.shortcutSourceMap,rt.shortcutFinalMap);
                 if(!plan.valid){FailShortcutRoute(a,L"10.6 EXIT descriptor không còn hợp lệ");return true;}
@@ -11848,7 +11754,7 @@ private:
     HWND shortcutTheme_ = nullptr;
     HWND shortcutSellerCombo_ = nullptr;
     HWND shortcutSellerCoordLabel_ = nullptr;
-    std::array<HWND, 28> shortcutCoordEdits_{};
+    std::array<HWND, 14> shortcutCoordEdits_{};
     std::array<HWND, 3> shortcutClickLabels_{};
     std::array<HWND, 3> shortcutClickTimeEdits_{};
     std::array<HWND, 3> shortcutClickDelayEdits_{};
