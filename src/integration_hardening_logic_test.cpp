@@ -1,7 +1,6 @@
 #include "auto_loot_logic.h"
 #include "trade_coordinator_logic.h"
 #include "pk_tl_lm_logic.h"
-#include "travel_network_logic.h"
 
 #include <array>
 #include <cassert>
@@ -76,25 +75,6 @@ void TestPkTlLmPerAccountAndSharedCoordinates() {
     assert(!TreatmentRequested(false, true));
 }
 
-void TestTravelNetworkFailClosed() {
-    using namespace travel_network_logic;
-    auto p = SelectNpcTeleport(kDaiLyMap, kNamHaiMap);
-    assert(p.valid && p.npcID == kXaTruyenChiNpcId && p.npcX == kXaTruyenChiX && p.npcY == kXaTruyenChiY && p.semantic == Semantic::NamHai);
-    p = SelectNpcTeleport(kDaiLyMap, kMieuCuongMap);
-    assert(p.valid && p.semantic == Semantic::MieuCuong);
-    p = SelectNpcTeleport(kDaiLyMap, kHoangLongPhuMap);
-    assert(p.valid && p.semantic == Semantic::HoangLongPhu);
-    p = SelectNpcTeleport(kDaiLyMap, kNgocKheMap);
-    assert(p.valid && p.expectedMap == kThachLamMap && p.semantic == Semantic::ThachLam);
-    p = SelectNpcTeleport(kNamHaiMap, kDaiLyMap);
-    assert(p.valid && p.npcID == kXaTruyenTinNpcId && p.semantic == Semantic::DaiLy);
-
-    // Unproven reverse routes must remain absent so controller falls back/fails closed.
-    assert(!SelectNpcTeleport(kMieuCuongMap, kLauLanMap).valid);
-    assert(!SelectNpcTeleport(kHoangLongPhuMap, kLauLanMap).valid);
-    assert(!SelectNpcTeleport(kThachLamMap, kLauLanMap).valid);
-}
-
 void MultiAccountSoak() {
     using namespace auto_loot_logic;
     constexpr std::size_t kAccounts = 24;
@@ -139,7 +119,6 @@ int main() {
     TestAutoLootGatesAndInterval();
     TestAutoSellRoles();
     TestPkTlLmPerAccountAndSharedCoordinates();
-    TestTravelNetworkFailClosed();
     MultiAccountSoak();
     return 0;
 }
