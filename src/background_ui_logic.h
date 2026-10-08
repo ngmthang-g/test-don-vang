@@ -9,15 +9,6 @@ namespace background_ui_logic {
 enum class Role {
     ConfirmMap,
     Revive,
-    ShopEntry,
-    MountShopEntry,
-    MedicineShopEntry,
-    SellTab,
-    QuickSell,
-    EquipmentTab,
-    Treatment,
-    TreatmentConfirm,
-    TreatmentAck,
     CloseTradeOrBag,
 };
 
@@ -102,45 +93,6 @@ inline int Score(const Labels& labels, Role role) {
             if (Has(all, {L"dauthai", L"buttonrevive", L"btnrevive"}) &&
                 !Has(all, {L"cancel", L"close", L"huy", L"thoat"})) return 720;
             return 0;
-        case Role::MountShopEntry:
-            // Mã Kiêu Minh (ResID 373): the vendor-entry callback is specifically
-            // "Mua thú cưỡi". Keep this strict so another NPC-function button cannot win.
-            if (text == L"muathucuoi") return 980;
-            return Has(all, {L"muathucuoi", L"mountshop", L"buymount"}) ? 780 : 0;
-        case Role::MedicineShopEntry:
-            // Ba Nhĩ (ResID 328) and Dược Đại Phu (ResID 279): the vendor-entry
-            // callback is specifically "Mua thuốc". Do not accept a generic function row.
-            if (text == L"muathuoc") return 980;
-            return Has(all, {L"muathuoc", L"medicineshop", L"buymedicine"}) ? 780 : 0;
-        case Role::ShopEntry:
-            // Generic fallback retained for the other existing vendor presets only.
-            if (text == L"muavatpham" || text == L"muaduocpham" || text == L"muathuocpham" ||
-                text == L"muataphoa" || text == L"muahanghoa" || text == L"muathuongpham" ||
-                text == L"muanhuyeupham" || text == L"cuahang") return 920;
-            return Has(all, {L"muavatpham", L"muaduocpham", L"muathuocpham", L"muataphoa",
-                             L"muahanghoa", L"muathuongpham", L"muanhuyeupham", L"shopentry",
-                             L"openshop", L"openstore"}) ? 740 : 0;
-        case Role::SellTab:
-            if (text == L"banvatpham") return 900;
-            if (Has(all, {L"banvatphamnhanh", L"quicksell"})) return -1000;
-            return Has(all, {L"banvatpham", L"sellitem", L"itemsell", L"selltab", L"tabsell"}) ? 700 : 0;
-        case Role::QuickSell:
-            if (text == L"banvatphamnhanh") return 920;
-            return Has(all, {L"banvatphamnhanh", L"quicksell", L"fastsell", L"sellquick"}) ? 740 : 0;
-        case Role::EquipmentTab:
-            if (text == L"trangbi") return 920;
-            if (Has(all, {L"muavatpham", L"buyitem", L"shopitem"})) return -1000;
-            return Has(all, {L"trangbi", L"equipmenttab", L"bagequipment", L"equiptab", L"tabquip"}) ? 730 : 0;
-        case Role::Treatment:
-            if (text == L"trilieu" || text == L"trithuong" || text == L"hoiphuc") return 920;
-            return Has(all, {L"trilieu", L"trithuong", L"hoiphuc", L"treatment", L"recoverhp"}) ? 720 : 0;
-        case Role::TreatmentConfirm:
-            if (text == L"xacnhan") return 920;
-            if (Has(all, {L"suynghi", L"cancel", L"huy", L"khong"})) return -1000;
-            return Has(all, {L"xacnhan", L"confirm", L"buttonok", L"btnok"}) ? 720 : 0;
-        case Role::TreatmentAck:
-            if (text == L"tabietroi") return 940;
-            return Has(all, {L"tabietroi", L"iknow", L"understand", L"gotit"}) ? 740 : 0;
         case Role::CloseTradeOrBag: {
             const bool safeParent = Has(parents, {L"shop", L"store", L"sell", L"trade", L"npc", L"business", L"bag", L"inventory", L"package", L"itempack", L"pack"});
             if (!safeParent) return 0;
