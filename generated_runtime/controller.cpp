@@ -405,7 +405,7 @@ struct PartyBuildSettings {
 struct ShortcutSettings {
     bool enabled = false;
     int theme = 0; // 0=system/light, 1=dark for the shortcut settings panel.
-    // v4: legacy shortcut points remain user-supplied; THĐC gates have measured defaults.
+    // Legacy shortcut points remain user-supplied.
     int kunlunNpcX = 0, kunlunNpcY = 0;
     int xaTruyenX = 0, xaTruyenY = 0; // legacy v3 fields: v3.2 runtime NEVER reads these; ID387 uses sellNpcPositions_.
     int ngaiX = 0, ngaiY = 0;
