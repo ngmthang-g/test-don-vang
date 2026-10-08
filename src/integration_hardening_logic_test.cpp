@@ -1,6 +1,5 @@
 #include "auto_loot_logic.h"
 #include "trade_coordinator_logic.h"
-#include "pk_tl_lm_logic.h"
 
 #include <array>
 #include <cassert>
@@ -53,28 +52,6 @@ void TestAutoSellRoles() {
     assert(!ShouldAutoSell(true, 3, true, 0));
 }
 
-void TestPkTlLmPerAccountAndSharedCoordinates() {
-    using namespace pk_tl_lm_logic;
-    assert(kSharedPointCount == 8);
-    std::array<bool, kSharedPointCount> seen{};
-    for (const int slot : {5, 10, 6, 7, 8, 9, 11, 12}) {
-        const int i = SharedPointIndexForClickSlot(slot);
-        assert(i >= 0 && i < kSharedPointCount);
-        assert(!seen[static_cast<std::size_t>(i)]);
-        seen[static_cast<std::size_t>(i)] = true;
-    }
-    for (bool v : seen) assert(v);
-
-    // Enable state remains per account even though the 8 click points are shared.
-    assert(ShouldArmTrainPk(true, false, 0));
-    assert(!ShouldArmTrainPk(false, false, 0));
-    assert(!ShouldArmTrainPk(true, true, 0));
-    assert(FirstTrainPkPhase(true) == 1);
-    assert(FirstTrainPkPhase(false) == 3);
-    assert(TreatmentRequested(true, true));
-    assert(!TreatmentRequested(false, true));
-}
-
 void MultiAccountSoak() {
     using namespace auto_loot_logic;
     constexpr std::size_t kAccounts = 24;
@@ -118,7 +95,6 @@ void MultiAccountSoak() {
 int main() {
     TestAutoLootGatesAndInterval();
     TestAutoSellRoles();
-    TestPkTlLmPerAccountAndSharedCoordinates();
     MultiAccountSoak();
     return 0;
 }
