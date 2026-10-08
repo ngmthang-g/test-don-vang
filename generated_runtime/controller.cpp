@@ -44,7 +44,6 @@
 #include "trade_quota_v18_logic.h"
 #include "auto_loot_logic.h"
 #include "pk_tl_lm_logic.h"
-#include "travel_network_logic.h"
 #include "auto_role_logic.h"
 
 using namespace cleanroute;
@@ -236,29 +235,12 @@ constexpr int IDC_SC_NGAI_X = 635;
 constexpr int IDC_SC_NGAI_Y = 636;
 constexpr int IDC_SC_TINHTUC_X = 637;
 constexpr int IDC_SC_TINHTUC_Y = 638;
-constexpr int IDC_SC_THANHLIEN_X = 639;
-constexpr int IDC_SC_THANHLIEN_Y = 640;
-constexpr int IDC_SC_PHAMLIEN_X = 641;
-constexpr int IDC_SC_PHAMLIEN_Y = 642;
-constexpr int IDC_SC_KHOVINH_X = 643;
-constexpr int IDC_SC_KHOVINH_Y = 644;
 constexpr int IDC_SC_SAVE = 646;
 constexpr int IDC_SC_CLOSE = 647;
-constexpr int IDC_SC_EXIT_EDITOR = 700;
-constexpr int IDC_EXIT_SAVE = 701;
-constexpr int IDC_EXIT_CLOSE = 702;
-constexpr int IDC_EXIT_X_BASE = 710; // + group*20
-constexpr int IDC_EXIT_Y_BASE = 711;
-constexpr int IDC_EXIT_CAPTURE_BASE = 712; // + group*20 + click
-constexpr int IDC_EXIT_TIME_BASE = 715; // + group*20 + click
-constexpr int IDC_EXIT_DELAY_BASE = 718; // + group*20 + click
 constexpr int IDC_SC_CAPTURE_COORD_0 = 651;
 constexpr int IDC_SC_CAPTURE_COORD_1 = 652;
 constexpr int IDC_SC_CAPTURE_COORD_2 = 653;
 constexpr int IDC_SC_CAPTURE_COORD_3 = 654;
-constexpr int IDC_SC_CAPTURE_COORD_4 = 655;
-constexpr int IDC_SC_CAPTURE_COORD_5 = 656;
-constexpr int IDC_SC_CAPTURE_COORD_6 = 657;
 constexpr int IDC_SC_SELLER_COMBO = 658;
 constexpr int IDC_SC_SELLER_CAPTURE = 659;
 constexpr int IDC_SC_SELLER_LABEL = 660;
@@ -409,20 +391,7 @@ struct ShortcutSettings {
     int xaTruyenX = 0, xaTruyenY = 0; // legacy v3 fields: v3.2 runtime NEVER reads these; ID387 uses sellNpcPositions_.
     int ngaiX = 0, ngaiY = 0;
     int tinhTucX = 0, tinhTucY = 0;
-    int thanhLienGateX = 0, thanhLienGateY = 0;
-    int phamLienGateX = 0, phamLienGateY = 0;
-    int khoVinhGateX = 0, khoVinhGateY = 0;
     std::array<TimedClickPoint, 3> kunlunExitClicks{};
-
-    // 10.6 reverse TravelNetwork exits. World points have safe defaults and remain editable.
-    int namHaiExitX = travel_network_logic::kNamHaiExitDefaultX, namHaiExitY = travel_network_logic::kNamHaiExitDefaultY;
-    int mieuCuongExitX = travel_network_logic::kMieuCuongExitDefaultX, mieuCuongExitY = travel_network_logic::kMieuCuongExitDefaultY;
-    int hoangLongPhuExitX = travel_network_logic::kHoangLongPhuExitDefaultX, hoangLongPhuExitY = travel_network_logic::kHoangLongPhuExitDefaultY;
-    int thachLamExitX = travel_network_logic::kThachLamExitDefaultX, thachLamExitY = travel_network_logic::kThachLamExitDefaultY;
-    std::array<TimedClickPoint, 3> namHaiExitClicks{};
-    std::array<TimedClickPoint, 3> mieuCuongExitClicks{};
-    std::array<TimedClickPoint, 3> hoangLongPhuExitClicks{};
-    std::array<TimedClickPoint, 3> thachLamExitClicks{};
 
     // Independent best-effort click that runs after the saved trade sequence finishes.
     // It is deliberately NOT a TradeSequenceStep and uses one shared coordinate for
@@ -440,33 +409,12 @@ enum class ShortcutKind : int {
     KunLunEnter = 2,
     FireEnter = 3,
     FireExit = 4,
-    InterserverGate = 5,
-    TravelNetwork = 7,
-    TravelNetworkExit = 8,
 };
-
-TravelSemantic ToProtocolTravelSemantic(travel_network_logic::Semantic semantic) {
-    using S = travel_network_logic::Semantic;
-    switch (semantic) {
-        case S::NamHai: return TravelSemantic::NamHai;
-        case S::MieuCuong: return TravelSemantic::MieuCuong;
-        case S::HoangLongPhu: return TravelSemantic::HoangLongPhu;
-        case S::ThachLam: return TravelSemantic::ThachLam;
-        case S::DaiLy: return TravelSemantic::DaiLy;
-        default: return TravelSemantic::None;
-    }
-}
 
 inline bool IsPrimaryShortcutOriginMap(int mapID) {
     // Verified MAPS.csv: Đại Lý=2, Tô Châu=4, Lâu Lan=5, Võ Đang=14, Mộ Dung=15.
     return mapID==2||mapID==4||mapID==5||mapID==14||mapID==15;
 }
-inline bool IsTravelNetworkCentralSourceMap(int mapID) {
-    // 10.6 approved source group: Đại Lý/Tô Châu/Lạc Dương/Lâu Lan + classic 9 faction maps.
-    // DATA-2222 MAPS.csv proves classic faction MapIDs 6..14.
-    return mapID == 2 || mapID == 3 || mapID == 4 || mapID == 5 || (mapID >= 6 && mapID <= 14);
-}
-
 constexpr int kThienSonMapId = 13;
 constexpr int kThienSonTransitX = 3073;
 constexpr int kThienSonTransitY = 2338;
@@ -1011,9 +959,6 @@ ShortcutSettings LoadShortcutSettings() {
         sc.xaTruyenX = ReadIniInt(section, L"XaTruyenX", 0); sc.xaTruyenY = ReadIniInt(section, L"XaTruyenY", 0);
         sc.ngaiX = ReadIniInt(section, L"NgaiNiNgoaNhiX", 0); sc.ngaiY = ReadIniInt(section, L"NgaiNiNgoaNhiY", 0);
         sc.tinhTucX = ReadIniInt(section, L"TinhTucX", 0); sc.tinhTucY = ReadIniInt(section, L"TinhTucY", 0);
-        sc.thanhLienGateX = ReadIniInt(section, L"ThanhLienGateX", 0); sc.thanhLienGateY = ReadIniInt(section, L"ThanhLienGateY", 0);
-        sc.phamLienGateX = ReadIniInt(section, L"PhamLienGateX", 0); sc.phamLienGateY = ReadIniInt(section, L"PhamLienGateY", 0);
-        sc.khoVinhGateX = ReadIniInt(section, L"KhoVinhGateX", 0); sc.khoVinhGateY = ReadIniInt(section, L"KhoVinhGateY", 0);
     }
     if (coordinateVersion >= 4) {
         for (std::size_t i = 0; i < sc.kunlunExitClicks.size(); ++i) {
@@ -1028,35 +973,6 @@ ShortcutSettings LoadShortcutSettings() {
                                 click.point.baseW > 0 && click.point.baseH > 0;
             click.timeMs = std::clamp(ReadIniInt(section, prefix + L"TimeMs", 0), 0, 60000);
             click.delayMs = std::clamp(ReadIniInt(section, prefix + L"DelayMs", 2000), 0, 60000);
-        }
-        if (coordinateVersion >= 5) {
-            sc.namHaiExitX = ReadIniInt(section, L"NamHaiExitX", sc.namHaiExitX);
-            sc.namHaiExitY = ReadIniInt(section, L"NamHaiExitY", sc.namHaiExitY);
-            sc.mieuCuongExitX = ReadIniInt(section, L"MieuCuongExitX", sc.mieuCuongExitX);
-            sc.mieuCuongExitY = ReadIniInt(section, L"MieuCuongExitY", sc.mieuCuongExitY);
-            sc.hoangLongPhuExitX = ReadIniInt(section, L"HoangLongPhuExitX", sc.hoangLongPhuExitX);
-            sc.hoangLongPhuExitY = ReadIniInt(section, L"HoangLongPhuExitY", sc.hoangLongPhuExitY);
-            sc.thachLamExitX = ReadIniInt(section, L"ThachLamExitX", sc.thachLamExitX);
-            sc.thachLamExitY = ReadIniInt(section, L"ThachLamExitY", sc.thachLamExitY);
-            auto loadExitClicks = [&](const wchar_t* base, std::array<TimedClickPoint,3>& clicks) {
-                for (std::size_t i = 0; i < clicks.size(); ++i) {
-                    const std::wstring prefix = std::wstring(base) + std::to_wstring(i) + L"_";
-                    TimedClickPoint& click = clicks[i];
-                    click.point.x = ReadIniInt(section, prefix + L"X", -1);
-                    click.point.y = ReadIniInt(section, prefix + L"Y", -1);
-                    click.point.baseW = ReadIniInt(section, prefix + L"W", 0);
-                    click.point.baseH = ReadIniInt(section, prefix + L"H", 0);
-                    click.point.valid = ReadIniInt(section, prefix + L"Valid", 0) != 0 &&
-                                        click.point.x >= 0 && click.point.y >= 0 &&
-                                        click.point.baseW > 0 && click.point.baseH > 0;
-                    click.timeMs = std::clamp(ReadIniInt(section, prefix + L"TimeMs", 0), 0, 60000);
-                    click.delayMs = std::clamp(ReadIniInt(section, prefix + L"DelayMs", 2000), 0, 60000);
-                }
-            };
-            loadExitClicks(L"NamHaiExitClick", sc.namHaiExitClicks);
-            loadExitClicks(L"MieuCuongExitClick", sc.mieuCuongExitClicks);
-            loadExitClicks(L"HoangLongPhuExitClick", sc.hoangLongPhuExitClicks);
-            loadExitClicks(L"ThachLamExitClick", sc.thachLamExitClicks);
         }
     } else if (coordinateVersion >= 3) {
         // One-time migration: old opener -> click #1; #2/#3 stay invalid.
@@ -1089,9 +1005,6 @@ void SaveShortcutSettings(const ShortcutSettings& sc) {
     WriteIniInt(section, L"XaTruyenX", sc.xaTruyenX); WriteIniInt(section, L"XaTruyenY", sc.xaTruyenY);
     WriteIniInt(section, L"NgaiNiNgoaNhiX", sc.ngaiX); WriteIniInt(section, L"NgaiNiNgoaNhiY", sc.ngaiY);
     WriteIniInt(section, L"TinhTucX", sc.tinhTucX); WriteIniInt(section, L"TinhTucY", sc.tinhTucY);
-    WriteIniInt(section, L"ThanhLienGateX", sc.thanhLienGateX); WriteIniInt(section, L"ThanhLienGateY", sc.thanhLienGateY);
-    WriteIniInt(section, L"PhamLienGateX", sc.phamLienGateX); WriteIniInt(section, L"PhamLienGateY", sc.phamLienGateY);
-    WriteIniInt(section, L"KhoVinhGateX", sc.khoVinhGateX); WriteIniInt(section, L"KhoVinhGateY", sc.khoVinhGateY);
     for (std::size_t i = 0; i < sc.kunlunExitClicks.size(); ++i) {
         const std::wstring prefix = L"KunLunExitClick" + std::to_wstring(i) + L"_";
         const TimedClickPoint& click = sc.kunlunExitClicks[i];
@@ -1103,27 +1016,6 @@ void SaveShortcutSettings(const ShortcutSettings& sc) {
         WriteIniInt(section, prefix + L"TimeMs", std::clamp(click.timeMs, 0, 60000));
         WriteIniInt(section, prefix + L"DelayMs", std::clamp(click.delayMs, 0, 60000));
     }
-    WriteIniInt(section, L"NamHaiExitX", sc.namHaiExitX); WriteIniInt(section, L"NamHaiExitY", sc.namHaiExitY);
-    WriteIniInt(section, L"MieuCuongExitX", sc.mieuCuongExitX); WriteIniInt(section, L"MieuCuongExitY", sc.mieuCuongExitY);
-    WriteIniInt(section, L"HoangLongPhuExitX", sc.hoangLongPhuExitX); WriteIniInt(section, L"HoangLongPhuExitY", sc.hoangLongPhuExitY);
-    WriteIniInt(section, L"ThachLamExitX", sc.thachLamExitX); WriteIniInt(section, L"ThachLamExitY", sc.thachLamExitY);
-    auto saveExitClicks = [&](const wchar_t* base, const std::array<TimedClickPoint,3>& clicks) {
-        for (std::size_t i = 0; i < clicks.size(); ++i) {
-            const std::wstring prefix = std::wstring(base) + std::to_wstring(i) + L"_";
-            const TimedClickPoint& click = clicks[i];
-            WriteIniInt(section, prefix + L"Valid", click.point.valid ? 1 : 0);
-            WriteIniInt(section, prefix + L"X", click.point.valid ? click.point.x : -1);
-            WriteIniInt(section, prefix + L"Y", click.point.valid ? click.point.y : -1);
-            WriteIniInt(section, prefix + L"W", click.point.valid ? click.point.baseW : 0);
-            WriteIniInt(section, prefix + L"H", click.point.valid ? click.point.baseH : 0);
-            WriteIniInt(section, prefix + L"TimeMs", std::clamp(click.timeMs, 0, 60000));
-            WriteIniInt(section, prefix + L"DelayMs", std::clamp(click.delayMs, 0, 60000));
-        }
-    };
-    saveExitClicks(L"NamHaiExitClick", sc.namHaiExitClicks);
-    saveExitClicks(L"MieuCuongExitClick", sc.mieuCuongExitClicks);
-    saveExitClicks(L"HoangLongPhuExitClick", sc.hoangLongPhuExitClicks);
-    saveExitClicks(L"ThachLamExitClick", sc.thachLamExitClicks);
     for (const wchar_t* key : {L"KunLunOpenClickX", L"KunLunOpenClickY", L"KunLunOpenClickW", L"KunLunOpenClickH"})
         WritePrivateProfileStringW(section.c_str(), key, nullptr, ConfigPath().c_str());
     FlushIni();
@@ -1973,17 +1865,6 @@ private:
             if (self) self->shortcutWindow_ = hwnd;
         }
         return self ? self->HandleShortcutWindow(hwnd, msg, wp, lp) : DefWindowProcW(hwnd, msg, wp, lp);
-    }
-
-    static LRESULT CALLBACK TravelExitWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
-        App* self = reinterpret_cast<App*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-        if (msg == WM_NCCREATE) {
-            auto* cs = reinterpret_cast<CREATESTRUCTW*>(lp);
-            self = reinterpret_cast<App*>(cs->lpCreateParams);
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
-            if (self) self->travelExitWindow_ = hwnd;
-        }
-        return self ? self->HandleTravelExitWindow(hwnd, msg, wp, lp) : DefWindowProcW(hwnd, msg, wp, lp);
     }
 
     static LRESULT CALLBACK TradeSequenceListSubclassProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
@@ -4052,7 +3933,7 @@ private:
         if (index < 0 || index >= 3) return;
         Account* a = SelectedAccount();
         if (!a) { Log(L"AUTO PT F8: hãy chọn một acc làm mẫu tọa client trước."); return; }
-        shortcutPostTradeCapture_ = false; shortcutKunlunCaptureIndex_ = -1; shortcutTravelExitCaptureGroup_ = -1; shortcutTravelExitCaptureIndex_ = -1;
+        shortcutPostTradeCapture_ = false; shortcutKunlunCaptureIndex_ = -1; 
         captureSlot_ = ClickSlot::None; captureTradeSequenceIndex_ = -1;
         captureTradeSequenceMode_ = 0; captureTradeSequenceMainRef_ = -1;
         partyBuildCaptureIndex_ = index; capturePid_ = a->game.pid;
@@ -5802,14 +5683,11 @@ private:
     void LoadShortcutSettingsToUi() {
         if (!shortcutWindow_) return;
         if (shortcutTheme_) SendMessageW(shortcutTheme_, CB_SETCURSEL, shortcutSettings_.theme, 0);
-        const int values[14] = {
+        const int values[8] = {
             shortcutSettings_.kunlunNpcX, shortcutSettings_.kunlunNpcY,
             shortcutSettings_.xaTruyenX, shortcutSettings_.xaTruyenY,
             shortcutSettings_.ngaiX, shortcutSettings_.ngaiY,
             shortcutSettings_.tinhTucX, shortcutSettings_.tinhTucY,
-            shortcutSettings_.thanhLienGateX, shortcutSettings_.thanhLienGateY,
-            shortcutSettings_.phamLienGateX, shortcutSettings_.phamLienGateY,
-            shortcutSettings_.khoVinhGateX, shortcutSettings_.khoVinhGateY,
         };
         for (std::size_t i = 0; i < shortcutCoordEdits_.size(); ++i) {
             if (shortcutCoordEdits_[i]) SetWindowTextW(shortcutCoordEdits_[i], std::to_wstring(values[i]).c_str());
@@ -5846,9 +5724,6 @@ private:
             shortcutSettings_.xaTruyenX = read(2, shortcutSettings_.xaTruyenX); shortcutSettings_.xaTruyenY = read(3, shortcutSettings_.xaTruyenY);
             shortcutSettings_.ngaiX = read(4, shortcutSettings_.ngaiX); shortcutSettings_.ngaiY = read(5, shortcutSettings_.ngaiY);
             shortcutSettings_.tinhTucX = read(6, shortcutSettings_.tinhTucX); shortcutSettings_.tinhTucY = read(7, shortcutSettings_.tinhTucY);
-            shortcutSettings_.thanhLienGateX = read(8, shortcutSettings_.thanhLienGateX); shortcutSettings_.thanhLienGateY = read(9, shortcutSettings_.thanhLienGateY);
-            shortcutSettings_.phamLienGateX = read(10, shortcutSettings_.phamLienGateX); shortcutSettings_.phamLienGateY = read(11, shortcutSettings_.phamLienGateY);
-            shortcutSettings_.khoVinhGateX = read(12, shortcutSettings_.khoVinhGateX); shortcutSettings_.khoVinhGateY = read(13, shortcutSettings_.khoVinhGateY);
         }
         for (std::size_t i = 0; i < shortcutSettings_.kunlunExitClicks.size(); ++i) {
             TimedClickPoint& click = shortcutSettings_.kunlunExitClicks[i];
@@ -5875,17 +5750,17 @@ private:
     }
 
     void CaptureShortcutCoordinate(int index) {
-        if (index < 0 || index >= 7) return;
+        if (index < 0 || index >= 4) return;
         Account* a = SelectedAccount();
         if (!a) { Log(L"TÙY CHỈNH TỌA: chọn 1 acc đang đứng đúng điểm trước."); return; }
         std::wstring error;
         if (!ReadSnapshot(*a, error, 1200)) { LogAccount(*a, L"Không đọc được state để LẤY TỌA: " + error); return; }
         const Snapshot& snap = a->snapshot;
         if ((snap.validMask & (ValidMap | ValidPosition)) != (ValidMap | ValidPosition)) { LogAccount(*a, L"State chưa có Map/X/Y để LẤY TỌA"); return; }
-        static constexpr int expectedMaps[7] = {75, 5, 5, 12, 10000, 10000, 10000};
-        static constexpr const wchar_t* labels[7] = {
-            L"NPC RỜI Côn Lôn Sơn", L"Xa Truyền Bình • ResID 387 • ĐI VÀO Côn Lôn", L"Ngải Ni Ngoã Nhĩ • ResID 913",
-            L"Tinh Túc Hải điểm ra", L"Cổng Thanh Liên Trại", L"Cổng Phàm Liên Trại", L"Cổng Khô Vinh Đạo"
+        static constexpr int expectedMaps[4] = {75, 5, 5, 12};
+        static constexpr const wchar_t* labels[4] = {
+            L"NPC RỜI Côn Lôn Sơn", L"Xa Truyền Bình • ResID 387 • ĐI VÀO Côn Lôn",
+            L"Ngải Ni Ngoã Nhĩ • ResID 913", L"Tinh Túc Hải điểm ra"
         };
         if (snap.mapID != expectedMaps[index]) {
             LogAccount(*a, std::wstring(L"KHÔNG LƯU ") + labels[index] + L": đang M" + std::to_wstring(snap.mapID) +
@@ -5893,10 +5768,8 @@ private:
             return;
         }
         PersistShortcutSettingsFromUi(false);
-        int* xs[7] = {&shortcutSettings_.kunlunNpcX,&shortcutSettings_.xaTruyenX,&shortcutSettings_.ngaiX,&shortcutSettings_.tinhTucX,
-                      &shortcutSettings_.thanhLienGateX,&shortcutSettings_.phamLienGateX,&shortcutSettings_.khoVinhGateX};
-        int* ys[7] = {&shortcutSettings_.kunlunNpcY,&shortcutSettings_.xaTruyenY,&shortcutSettings_.ngaiY,&shortcutSettings_.tinhTucY,
-                      &shortcutSettings_.thanhLienGateY,&shortcutSettings_.phamLienGateY,&shortcutSettings_.khoVinhGateY};
+        int* xs[4] = {&shortcutSettings_.kunlunNpcX,&shortcutSettings_.xaTruyenX,&shortcutSettings_.ngaiX,&shortcutSettings_.tinhTucX};
+        int* ys[4] = {&shortcutSettings_.kunlunNpcY,&shortcutSettings_.xaTruyenY,&shortcutSettings_.ngaiY,&shortcutSettings_.tinhTucY};
         *xs[index]=snap.x; *ys[index]=snap.y;
         SaveShortcutSettings(shortcutSettings_); LoadShortcutSettingsToUi();
         for (auto& item : accounts_) if (item) ResetShortcutRoute(item->runtime);
@@ -5930,14 +5803,11 @@ private:
         SendMessageW(shortcutTheme_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Tối"));
 
         struct Row { const wchar_t* label; int idX; int idY; int captureId; };
-        const Row rows[7] = {
+        const Row rows[4] = {
             {L"NPC RỜI Côn Lôn • M75", IDC_SC_KUNLUN_X, IDC_SC_KUNLUN_Y, IDC_SC_CAPTURE_COORD_0},
             {L"Xa Truyền Bình • ID387 • ĐI VÀO Côn Lôn • M5", IDC_SC_XA_X, IDC_SC_XA_Y, IDC_SC_CAPTURE_COORD_1},
             {L"Ngải Ni Ngoã Nhĩ • ResID 913 • M5", IDC_SC_NGAI_X, IDC_SC_NGAI_Y, IDC_SC_CAPTURE_COORD_2},
             {L"Tinh Túc Hải điểm ra • M12", IDC_SC_TINHTUC_X, IDC_SC_TINHTUC_Y, IDC_SC_CAPTURE_COORD_3},
-            {L"Cổng Thanh Liên • từ M10000", IDC_SC_THANHLIEN_X, IDC_SC_THANHLIEN_Y, IDC_SC_CAPTURE_COORD_4},
-            {L"Cổng Phàm Liên • từ M10000", IDC_SC_PHAMLIEN_X, IDC_SC_PHAMLIEN_Y, IDC_SC_CAPTURE_COORD_5},
-            {L"Cổng Khô Vinh • từ M10000", IDC_SC_KHOVINH_X, IDC_SC_KHOVINH_Y, IDC_SC_CAPTURE_COORD_6},
         };
         MakeIn(parent,L"STATIC",L"ĐƯỜNG TẮT HIỆN CÓ",SS_LEFT|SS_CENTERIMAGE|WS_BORDER,15,86,450,25,0);
         auto drawCoordinateRow = [&](int x, int y, const Row& row, std::size_t editOffset) {
@@ -5948,7 +5818,7 @@ private:
             shortcutCoordEdits_[editOffset+1]=MakeIn(parent,L"EDIT",L"",WS_BORDER|ES_NUMBER|ES_CENTER,x+308,y,58,27,row.idY);
             MakeIn(parent,L"BUTTON",L"LẤY TỌA",BS_PUSHBUTTON,x+371,y,79,27,row.captureId);
         };
-        for (int i=0;i<7;++i) {
+        for (int i=0;i<4;++i) {
             // Xa Truyền Bình ID387 uses ONLY the main Auto-Sell NPC coordinate source.
             if (i == 1) {
                 shortcutCoordEdits_[2] = nullptr;
@@ -5989,7 +5859,6 @@ private:
         MakeIn(parent,L"BUTTON",L"LẤY CLICK (F8)",BS_PUSHBUTTON,760,686,143,28,IDC_SC_POST_TRADE_CAPTURE);
         MakeIn(parent,L"STATIC",L"ms",SS_LEFT|SS_CENTERIMAGE,612,686,24,28,0);
 
-        MakeIn(parent,L"BUTTON",L"10.6 EXIT • 4 CỤM",BS_PUSHBUTTON,500,812,190,32,IDC_SC_EXIT_EDITOR);
         MakeIn(parent,L"BUTTON",L"LƯU",BS_DEFPUSHBUTTON,705,812,105,32,IDC_SC_SAVE);
         MakeIn(parent,L"BUTTON",L"ĐÓNG",BS_PUSHBUTTON,820,812,125,32,IDC_SC_CLOSE);
         LoadShortcutSettingsToUi(); ApplyShortcutPanelTheme(parent);
@@ -6026,7 +5895,7 @@ private:
         }
         shortcutPostTradeCapture_ = true;
         shortcutKunlunCaptureIndex_ = -1;
-        shortcutTravelExitCaptureGroup_ = -1; shortcutTravelExitCaptureIndex_ = -1;
+        
         captureSlot_ = ClickSlot::None;
         captureTradeSequenceIndex_ = -1;
         captureTradeSequenceMode_ = 0;
@@ -6042,7 +5911,6 @@ private:
                     case IDC_SC_CAPTURE_KUNLUN_CLICK_0: case IDC_SC_CAPTURE_KUNLUN_CLICK_1: case IDC_SC_CAPTURE_KUNLUN_CLICK_2:
                         if(HIWORD(wp)==BN_CLICKED) BeginKunlunExitClickCapture(LOWORD(wp)-IDC_SC_CAPTURE_KUNLUN_CLICK_0); return 0;
                     case IDC_SC_CAPTURE_COORD_0: case IDC_SC_CAPTURE_COORD_2: case IDC_SC_CAPTURE_COORD_3:
-                    case IDC_SC_CAPTURE_COORD_4: case IDC_SC_CAPTURE_COORD_5: case IDC_SC_CAPTURE_COORD_6:
                         if(HIWORD(wp)==BN_CLICKED) CaptureShortcutCoordinate(LOWORD(wp)-IDC_SC_CAPTURE_COORD_0); return 0;
                     case IDC_SC_SELLER_CAPTURE: if(HIWORD(wp)==BN_CLICKED) CaptureShortcutSellerPosition(); return 0;
                     case IDC_SC_SELLER_COMBO: if(HIWORD(wp)==CBN_SELCHANGE) RefreshShortcutSellerUi(); return 0;
@@ -6050,7 +5918,6 @@ private:
                     case IDC_SC_POST_TRADE_ENABLED: if(HIWORD(wp)==BN_CLICKED) PersistShortcutSettingsFromUi(false); return 0;
                     case IDC_SC_POST_TRADE_DELAY: case IDC_SC_POST_TRADE_REPEAT:
                         if(HIWORD(wp)==EN_KILLFOCUS) PersistShortcutSettingsFromUi(false); return 0;
-                    case IDC_SC_EXIT_EDITOR: if(HIWORD(wp)==BN_CLICKED){PersistShortcutSettingsFromUi(false);OpenTravelExitWindow();} return 0;
                     case IDC_SC_SAVE: if(HIWORD(wp)==BN_CLICKED){PersistShortcutSettingsFromUi();ApplyShortcutPanelTheme(hwnd);LoadShortcutSettingsToUi();} return 0;
                     case IDC_SC_CLOSE: if(HIWORD(wp)==BN_CLICKED){PersistShortcutSettingsFromUi(false);ShowWindow(hwnd,SW_HIDE);} return 0;
                     case IDC_SC_THEME: if(HIWORD(wp)==CBN_SELCHANGE){PersistShortcutSettingsFromUi(false);ApplyShortcutPanelTheme(hwnd);} return 0;
@@ -6066,108 +5933,6 @@ private:
                 shortcutCoordEdits_.fill(nullptr);shortcutClickLabels_.fill(nullptr);shortcutClickTimeEdits_.fill(nullptr);
                 shortcutClickDelayEdits_.fill(nullptr);return 0;
         }
-        return DefWindowProcW(hwnd,msg,wp,lp);
-    }
-
-
-    std::array<TimedClickPoint,3>* TravelExitClicksByGroup(int group) {
-        switch (group) {
-            case 0: return &shortcutSettings_.namHaiExitClicks;
-            case 1: return &shortcutSettings_.mieuCuongExitClicks;
-            case 2: return &shortcutSettings_.hoangLongPhuExitClicks;
-            case 3: return &shortcutSettings_.thachLamExitClicks;
-            default: return nullptr;
-        }
-    }
-
-    void LoadTravelExitUi() {
-        if (!travelExitWindow_) return;
-        const int xs[4] = {shortcutSettings_.namHaiExitX, shortcutSettings_.mieuCuongExitX, shortcutSettings_.hoangLongPhuExitX, shortcutSettings_.thachLamExitX};
-        const int ys[4] = {shortcutSettings_.namHaiExitY, shortcutSettings_.mieuCuongExitY, shortcutSettings_.hoangLongPhuExitY, shortcutSettings_.thachLamExitY};
-        for (int g=0; g<4; ++g) {
-            if (travelExitX_[g]) SetText(travelExitX_[g], std::to_wstring(xs[g]));
-            if (travelExitY_[g]) SetText(travelExitY_[g], std::to_wstring(ys[g]));
-            auto* clicks = TravelExitClicksByGroup(g);
-            if (!clicks) continue;
-            for (int i=0; i<3; ++i) {
-                const std::size_t flat = static_cast<std::size_t>(g*3+i);
-                if (travelExitClickLabels_[flat]) SetText(travelExitClickLabels_[flat], (*clicks)[i].point.valid ? PointDescription((*clicks)[i].point) : L"CHƯA GÁN • F8");
-                if (travelExitTime_[flat]) SetText(travelExitTime_[flat], std::to_wstring((*clicks)[i].timeMs));
-                if (travelExitDelay_[flat]) SetText(travelExitDelay_[flat], std::to_wstring((*clicks)[i].delayMs));
-            }
-        }
-    }
-
-    void PersistTravelExitUi(bool logSaved=false) {
-        if (!travelExitWindow_) return;
-        int* xs[4] = {&shortcutSettings_.namHaiExitX,&shortcutSettings_.mieuCuongExitX,&shortcutSettings_.hoangLongPhuExitX,&shortcutSettings_.thachLamExitX};
-        int* ys[4] = {&shortcutSettings_.namHaiExitY,&shortcutSettings_.mieuCuongExitY,&shortcutSettings_.hoangLongPhuExitY,&shortcutSettings_.thachLamExitY};
-        for (int g=0;g<4;++g) {
-            if (travelExitX_[g]) *xs[g] = ParseEditInt(travelExitX_[g], *xs[g], 0, 1000000);
-            if (travelExitY_[g]) *ys[g] = ParseEditInt(travelExitY_[g], *ys[g], 0, 1000000);
-            auto* clicks = TravelExitClicksByGroup(g);
-            if (!clicks) continue;
-            for (int i=0;i<3;++i) {
-                const std::size_t flat=static_cast<std::size_t>(g*3+i);
-                if (travelExitTime_[flat]) (*clicks)[i].timeMs=ParseEditInt(travelExitTime_[flat],(*clicks)[i].timeMs,0,60000);
-                if (travelExitDelay_[flat]) (*clicks)[i].delayMs=ParseEditInt(travelExitDelay_[flat],(*clicks)[i].delayMs,0,60000);
-            }
-        }
-        SaveShortcutSettings(shortcutSettings_);
-        if (logSaved) Log(L"10.6 EXIT: đã lưu 4 điểm world + 12 click F8 Time/Delay.");
-    }
-
-    void BeginTravelExitCapture(int group, int index) {
-        if (group<0||group>=4||index<0||index>=3) return;
-        Account* a=SelectedAccount();
-        if(!a){Log(L"10.6 EXIT: chọn 1 acc mẫu trước khi lấy click F8.");return;}
-        PersistTravelExitUi(false);
-        shortcutTravelExitCaptureGroup_=group; shortcutTravelExitCaptureIndex_=index;
-        shortcutKunlunCaptureIndex_=-1; shortcutPostTradeCapture_=false;
-        captureSlot_=ClickSlot::None; captureTradeSequenceIndex_=-1; captureTradeSequenceMode_=0; captureTradeSequenceMainRef_=-1; capturePid_=a->game.pid;
-        static constexpr const wchar_t* names[4]={L"NAM HẢI",L"MIÊU CƯƠNG",L"HOÀNG LONG PHỦ",L"M60"};
-        LogAccount(*a,L"10.6 EXIT "+std::wstring(names[group])+L": đưa chuột đúng click "+std::to_wstring(index+1)+L"/3 rồi F8.");
-    }
-
-    void BuildTravelExitUi(HWND parent) {
-        static constexpr const wchar_t* names[4]={L"NAM HẢI EXIT • M85",L"MIÊU CƯƠNG EXIT • M64",L"HOÀNG LONG PHỦ EXIT • M49",L"M60 EXIT • THẠCH LÂM"};
-        for(int g=0;g<4;++g){
-            const int top=12+g*166;
-            MakeIn(parent,L"STATIC",names[g],SS_LEFT|SS_CENTERIMAGE|WS_BORDER,12,top,850,26,0);
-            MakeIn(parent,L"STATIC",L"X",SS_CENTERIMAGE,18,top+34,18,24,0);
-            travelExitX_[g]=MakeIn(parent,L"EDIT",L"",WS_BORDER|ES_NUMBER|ES_CENTER,38,top+34,78,24,IDC_EXIT_X_BASE+g*20);
-            MakeIn(parent,L"STATIC",L"Y",SS_CENTERIMAGE,123,top+34,18,24,0);
-            travelExitY_[g]=MakeIn(parent,L"EDIT",L"",WS_BORDER|ES_NUMBER|ES_CENTER,143,top+34,78,24,IDC_EXIT_Y_BASE+g*20);
-            for(int i=0;i<3;++i){
-                const int y=top+65+i*30; const std::size_t flat=static_cast<std::size_t>(g*3+i);
-                MakeIn(parent,L"STATIC",(L"Click "+std::to_wstring(i+1)).c_str(),SS_LEFT|SS_CENTERIMAGE,18,y,54,24,0);
-                travelExitClickLabels_[flat]=MakeIn(parent,L"STATIC",L"",SS_LEFT|SS_CENTERIMAGE|WS_BORDER,74,y,300,24,0);
-                MakeIn(parent,L"STATIC",L"Time",SS_CENTERIMAGE,380,y,36,24,0);
-                travelExitTime_[flat]=MakeIn(parent,L"EDIT",L"",WS_BORDER|ES_NUMBER|ES_CENTER,418,y,58,24,IDC_EXIT_TIME_BASE+g*20+i);
-                MakeIn(parent,L"STATIC",L"Delay",SS_CENTERIMAGE,482,y,42,24,0);
-                travelExitDelay_[flat]=MakeIn(parent,L"EDIT",L"",WS_BORDER|ES_NUMBER|ES_CENTER,526,y,58,24,IDC_EXIT_DELAY_BASE+g*20+i);
-                MakeIn(parent,L"BUTTON",L"LẤY CLICK (F8)",BS_PUSHBUTTON,594,y,150,24,IDC_EXIT_CAPTURE_BASE+g*20+i);
-            }
-        }
-        MakeIn(parent,L"BUTTON",L"LƯU",BS_DEFPUSHBUTTON,650,680,95,30,IDC_EXIT_SAVE);
-        MakeIn(parent,L"BUTTON",L"ĐÓNG",BS_PUSHBUTTON,760,680,100,30,IDC_EXIT_CLOSE);
-        LoadTravelExitUi();
-    }
-
-    void OpenTravelExitWindow() {
-        if(travelExitWindow_&&IsWindow(travelExitWindow_)){ShowWindow(travelExitWindow_,SW_SHOW);SetForegroundWindow(travelExitWindow_);return;}
-        WNDCLASSEXW wc{};wc.cbSize=sizeof(wc);wc.lpfnWndProc=TravelExitWndProc;wc.hInstance=instance_;wc.hCursor=LoadCursor(nullptr,IDC_ARROW);wc.hbrBackground=reinterpret_cast<HBRUSH>(COLOR_WINDOW+1);wc.lpszClassName=L"ThanLongTravelExitV106";
-        if(!RegisterClassExW(&wc)&&GetLastError()!=ERROR_CLASS_ALREADY_EXISTS){Log(L"Không tạo được cửa sổ 10.6 EXIT.");return;}
-        travelExitWindow_=CreateWindowExW(WS_EX_TOOLWINDOW,wc.lpszClassName,L"Công cụ hỗ trợ game rảnh tay • 10.6 • 4 EXIT",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU,CW_USEDEFAULT,CW_USEDEFAULT,890,760,shortcutWindow_,nullptr,instance_,this);
-        if(!travelExitWindow_){Log(L"Không mở được 10.6 EXIT.");return;}BuildTravelExitUi(travelExitWindow_);ShowWindow(travelExitWindow_,SW_SHOW);UpdateWindow(travelExitWindow_);
-    }
-
-    LRESULT HandleTravelExitWindow(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
-        (void)lp;
-        if(msg==WM_COMMAND){const int id=LOWORD(wp);if(id==IDC_EXIT_SAVE&&HIWORD(wp)==BN_CLICKED){PersistTravelExitUi(true);LoadTravelExitUi();return 0;}if(id==IDC_EXIT_CLOSE&&HIWORD(wp)==BN_CLICKED){PersistTravelExitUi(false);ShowWindow(hwnd,SW_HIDE);return 0;}
-            for(int g=0;g<4;++g){for(int i=0;i<3;++i){if(id==IDC_EXIT_CAPTURE_BASE+g*20+i&&HIWORD(wp)==BN_CLICKED){BeginTravelExitCapture(g,i);return 0;}if((id==IDC_EXIT_TIME_BASE+g*20+i||id==IDC_EXIT_DELAY_BASE+g*20+i)&&HIWORD(wp)==EN_KILLFOCUS){PersistTravelExitUi(false);return 0;}}if((id==IDC_EXIT_X_BASE+g*20||id==IDC_EXIT_Y_BASE+g*20)&&HIWORD(wp)==EN_KILLFOCUS){PersistTravelExitUi(false);return 0;}}}
-        if(msg==WM_CLOSE){PersistTravelExitUi(false);ShowWindow(hwnd,SW_HIDE);return 0;}
-        if(msg==WM_NCDESTROY){travelExitWindow_=nullptr;travelExitX_.fill(nullptr);travelExitY_.fill(nullptr);travelExitClickLabels_.fill(nullptr);travelExitTime_.fill(nullptr);travelExitDelay_.fill(nullptr);shortcutTravelExitCaptureGroup_=-1;shortcutTravelExitCaptureIndex_=-1;return 0;}
         return DefWindowProcW(hwnd,msg,wp,lp);
     }
 
@@ -7889,7 +7654,7 @@ private:
         Account* a = SelectedAccount();
         if (!a) { Log(L"Chưa chọn acc để lấy tọa độ"); return; }
         shortcutPostTradeCapture_ = false;
-        shortcutTravelExitCaptureGroup_ = -1; shortcutTravelExitCaptureIndex_ = -1;
+        
         captureSlot_ = slot;
         captureTradeSequenceIndex_ = -1;
         captureTradeSequenceMode_ = 0;
@@ -7903,7 +7668,7 @@ private:
     void CaptureHotkeyPoint() {
 
         const bool hasMode = partyBuildCaptureIndex_ >= 0 || shortcutPostTradeCapture_ || shortcutKunlunCaptureIndex_ >= 0 ||
-                             (shortcutTravelExitCaptureGroup_ >= 0 && shortcutTravelExitCaptureIndex_ >= 0) || captureSlot_ != ClickSlot::None ||
+                             captureSlot_ != ClickSlot::None ||
                              captureTradeSequenceIndex_ >= 0;
         if (!hasMode || capturePid_ == 0) return;
         Account* captureAccount = AccountByPid(capturePid_);
@@ -7911,7 +7676,7 @@ private:
             Log(L"Lấy tọa độ thất bại: acc/cửa sổ đã mất.");
             captureSlot_ = ClickSlot::None; capturePid_ = 0;
             captureTradeSequenceIndex_ = -1; captureTradeSequenceMode_ = 0; captureTradeSequenceMainRef_ = -1;
-            shortcutKunlunCaptureIndex_ = -1; shortcutPostTradeCapture_ = false; shortcutTravelExitCaptureGroup_ = -1; shortcutTravelExitCaptureIndex_ = -1; partyBuildCaptureIndex_ = -1;
+            shortcutKunlunCaptureIndex_ = -1; shortcutPostTradeCapture_ = false;  partyBuildCaptureIndex_ = -1;
             return;
         }
         POINT screen{};
@@ -7939,10 +7704,6 @@ private:
             SaveShortcutSettings(shortcutSettings_);
             LoadShortcutSettingsToUi();
             LogAccount(*captureAccount, L"CLICK SAU TARGET MAIN: đã lưu tọa dùng cho CON = " + PointDescription(captured));
-        } else if (shortcutTravelExitCaptureGroup_ >= 0 && shortcutTravelExitCaptureGroup_ < 4 &&
-                   shortcutTravelExitCaptureIndex_ >= 0 && shortcutTravelExitCaptureIndex_ < 3) {
-            auto* clicks=TravelExitClicksByGroup(shortcutTravelExitCaptureGroup_);
-            if(clicks){(*clicks)[static_cast<std::size_t>(shortcutTravelExitCaptureIndex_)].point=captured;SaveShortcutSettings(shortcutSettings_);LoadTravelExitUi();LogAccount(*captureAccount,L"10.6 EXIT: đã lưu click "+std::to_wstring(shortcutTravelExitCaptureIndex_+1)+L"/3 = "+PointDescription(captured));}
         } else if (shortcutKunlunCaptureIndex_ >= 0 && shortcutKunlunCaptureIndex_ < 3) {
             const int index = shortcutKunlunCaptureIndex_;
             shortcutSettings_.kunlunExitClicks[static_cast<std::size_t>(index)].point = captured;
@@ -8028,7 +7789,7 @@ private:
         LoadSelectedProfileToUi();
         captureSlot_ = ClickSlot::None; capturePid_ = 0;
         captureTradeSequenceIndex_ = -1; captureTradeSequenceMode_ = 0; captureTradeSequenceMainRef_ = -1;
-        shortcutKunlunCaptureIndex_ = -1; shortcutPostTradeCapture_ = false; shortcutTravelExitCaptureGroup_ = -1; shortcutTravelExitCaptureIndex_ = -1; partyBuildCaptureIndex_ = -1;
+        shortcutKunlunCaptureIndex_ = -1; shortcutPostTradeCapture_ = false;  partyBuildCaptureIndex_ = -1;
     }
 
     bool DispatchInternalPointActionDirect(Account& a, const ClickPoint& savedPoint,
@@ -9760,35 +9521,6 @@ private:
         return true;
     }
 
-    bool HandleTravelNetworkExit3Click(Account& a, DWORD now, const TargetProfile& finalTarget,
-                                          const travel_network_logic::ExitPlan& plan,
-                                          const TargetProfile& exitPoint,
-                                          const std::array<TimedClickPoint,3>& clicks) {
-        RuntimeState& rt=a.runtime; const Snapshot& s=a.snapshot;
-        if(rt.shortcutPhase==99) return true;
-        if(rt.shortcutPhase<=1){
-            bool reached=false;(void)ShortcutTravelLeg(a,now,exitPoint,plan.label,reached);
-            if(!reached){rt.shortcutPhase=1;return true;}
-            for(std::size_t i=0;i<clicks.size();++i){if(!clicks[i].point.valid){FailShortcutRoute(a,L"10.6 EXIT thiếu click "+std::to_wstring(i+1)+L"/3 • phải F8 đủ 3 click");return true;}}
-            rt.shortcutSourceMap=s.mapID;rt.shortcutClickIndex=0;rt.shortcutPhase=2;rt.shortcutTick=now;rt.shortcutAttempts=0;
-            LogAccount(a,L"10.6 EXIT ARM • "+std::wstring(plan.label)+L" • chuẩn bị 3 click.");return true;
-        }
-        if(rt.shortcutPhase==2){
-            const int i=rt.shortcutClickIndex;if(i<0||i>=3){FailShortcutRoute(a,L"10.6 EXIT click index lỗi");return true;}
-            const DWORD prev=i==0?0u:static_cast<DWORD>(clicks[static_cast<std::size_t>(i-1)].delayMs);
-            const DWORD wait=prev+static_cast<DWORD>(clicks[static_cast<std::size_t>(i)].timeMs);
-            if(!Elapsed(now,rt.shortcutTick,wait)) return true;
-            std::wstring error;if(!DispatchInternalPointActionDirect(a,clicks[static_cast<std::size_t>(i)].point,L"10.6 EXIT click "+std::to_wstring(i+1)+L"/3",error)){FailShortcutRoute(a,L"10.6 EXIT click thất bại: "+error);return true;}
-            ++rt.shortcutClickIndex;rt.shortcutTick=now;if(rt.shortcutClickIndex==3)rt.shortcutPhase=3;return true;
-        }
-        if(rt.shortcutPhase==3){
-            const DWORD finalDelay=static_cast<DWORD>(clicks[2].delayMs);if(!Elapsed(now,rt.shortcutTick,finalDelay))return true;
-            if(a.snapshotValid&&(s.validMask&ValidMap)==ValidMap&&s.mapID!=rt.shortcutSourceMap&&s.mapReady&&!s.waitingChangeMap){LogAccount(a,L"10.6 EXIT MAP PASS • M"+std::to_wstring(rt.shortcutSourceMap)+L" → M"+std::to_wstring(s.mapID)+L" • resume AutoPath final M"+std::to_wstring(finalTarget.mapID));ResetShortcutRoute(rt);return false;}
-            if(Elapsed(now,rt.shortcutTick,finalDelay+15000u))FailShortcutRoute(a,L"10.6 EXIT đủ 3 click nhưng MapID chưa đổi");return true;
-        }
-        return true;
-    }
-
     bool HandleShortcutNpcRoute(Account& a, DWORD now, const TargetProfile& finalTarget,
                                 const TargetProfile& npcPoint, int npcID,
                                 TravelSemantic semantic, int expectedMap, const wchar_t* label,
@@ -9950,139 +9682,10 @@ private:
         return true;
     }
 
-    bool HandleShortcutInterserverGate(Account& a, DWORD now, const TargetProfile& finalTarget,
-                                       const TargetProfile& gate) {
-        RuntimeState& rt = a.runtime;
-        const Snapshot& s = a.snapshot;
-        if (rt.shortcutPhase == 99) return true;
-        if (!gate.valid) {
-            FailShortcutRoute(a, L"chưa gán tọa cổng liên-server • bấm LẤY TỌA ở M10000");
-            return true;
-        }
-
-        if (rt.shortcutPhase <= 1) {
-            if (!a.snapshotValid || !s.mapReady || s.waitingChangeMap ||
-                (s.validMask & (ValidMap | ValidPosition | ValidAutoPath | ValidRiding)) !=
-                    (ValidMap | ValidPosition | ValidAutoPath | ValidRiding)) {
-                rt.status = L"LIÊN-SERVER • chờ state M/X/Y/AutoPath/IsRiding ổn định";
-                return true;
-            }
-            if (s.mapID != gate.mapID) {
-                FailShortcutRoute(a, L"PORTAL SPECIAL chỉ được chạy waypoint cổng khi đang đúng M10000");
-                return true;
-            }
-
-            const long long dx = static_cast<long long>(s.x) - gate.x;
-            const long long dy = static_cast<long long>(s.y) - gate.y;
-            const long long d2 = dx * dx + dy * dy;
-            const bool preciseAtGate = d2 <= static_cast<long long>(kPreciseWorldTolerance) * kPreciseWorldTolerance;
-            const bool movementObservedAfterDispatch = rt.shortcutAttempts > 0 && rt.shortcutTick != 0 &&
-                rt.lastMovementTick != 0 && static_cast<LONG>(rt.lastMovementTick - rt.shortcutTick) > 0;
-            const bool stalledThreeSeconds = rt.shortcutAttempts > 0 &&
-                (s.autoPathing || movementObservedAfterDispatch) &&
-                rt.lastMovementTick != 0 && Elapsed(now, rt.lastMovementTick, kLauLanGateStallMs);
-
-            if (preciseAtGate || stalledThreeSeconds) {
-                rt.shortcutPhase = 2;
-                rt.shortcutTick = now;
-                rt.shortcutAttempts = 0;
-                rt.status = preciseAtGate
-                    ? L"LIÊN-SERVER • PORTAL SPECIAL tới sát tọa cổng • KHÔNG StopPath theo radius 120 • chờ popup"
-                    : L"LIÊN-SERVER • PORTAL SPECIAL đã có movement proof rồi đứng ~3s • chờ popup";
-                LogAccount(a, preciseAtGate
-                    ? L"PORTAL SPECIAL: vị trí đã vào tolerance 20; giữ nguyên path, không StopPath sớm, chuyển sang confirm semantic v0.1.8."
-                    : L"PORTAL SPECIAL: đã chứng minh route thực sự di chuyển rồi stall ~3s; chuyển sang confirm semantic dù IsAutoPathing có thể đã tắt." );
-                return true;
-            }
-
-            if (s.autoPathing || movementObservedAfterDispatch) {
-                rt.status = L"LIÊN-SERVER • PORTAL SPECIAL đang chạy thật tới cổng " +
-                            std::to_wstring(gate.x) + L"," + std::to_wstring(gate.y);
-                return true;
-            }
-
-            if (rt.shortcutAttempts >= kShortcutPathMaxDispatch && rt.shortcutTick != 0 &&
-                Elapsed(now, rt.shortcutTick, kShortcutPathAcceptMs)) {
-                FailShortcutRoute(a, L"PORTAL SPECIAL: đã lên ngựa và gửi StartPath 5 lần nhưng không thấy AutoPath hoặc movement proof");
-                return true;
-            }
-            if (rt.shortcutTick != 0 && !Elapsed(now, rt.shortcutTick, kShortcutPathAcceptMs)) {
-                rt.status = L"LIÊN-SERVER • STARTPATH PASS • chờ tối đa 5s để thấy AutoPath/movement proof";
-                return true;
-            }
-
-            // Reuse the normal robust FSM so M10000 follows the same hard contract:
-            // AutoFight OFF -> IsRiding=1 -> StartPath. There is no foot fallback.
-            const DWORD startPathPassBefore = rt.lastStartPathPassTick;
-            bool arrived = false;
-            (void)HandleRobustTravelDirect(a, now, gate, L"cổng liên-server M10000", arrived,
-                                           kPreciseWorldTolerance);
-            if (rt.lastStartPathPassTick != 0 && rt.lastStartPathPassTick != startPathPassBefore) {
-                ++rt.shortcutAttempts;
-                rt.shortcutTick = rt.lastStartPathPassTick;
-                rt.lastObservedX = s.x;
-                rt.lastObservedY = s.y;
-                rt.lastMovementTick = rt.shortcutTick;
-                rt.status = L"LIÊN-SERVER • PORTAL SPECIAL MOUNTED STARTPATH PASS • lần " +
-                            std::to_wstring(rt.shortcutAttempts) + L"/" + std::to_wstring(kShortcutPathMaxDispatch) +
-                            L" • chờ AutoPath/movement proof";
-            }
-            return true;
-        }
-
-        if (rt.shortcutPhase == 2) {
-            // Portal confirmation uses the same UI-frame pacing as the NPC
-            // destination flow. It is intentionally not a fast one-shot click.
-            const DWORD confirmWait = rt.shortcutAttempts == 0
-                ? kShortcutConfirmUiReadyMs : kShortcutConfirmRetryMs;
-            if (!Elapsed(now, rt.shortcutTick, confirmWait)) return true;
-            if (ShortcutBridgeCall(a, Command::ConfirmTravelSemantic, 0,
-                                   L"Xác nhận popup cổng liên-server theo v0.1.8", now, 5000)) {
-                rt.shortcutPhase = 3;
-                rt.shortcutTick = now;
-                rt.shortcutAttempts = 0;
-                rt.shortcutExpectedMap = finalTarget.mapID;
-                return true;
-            }
-            ++rt.shortcutAttempts;
-            rt.shortcutTick = now;
-            if (rt.shortcutAttempts >= kShortcutConfirmMaxAttempts) {
-                FailShortcutRoute(a, L"PORTAL SPECIAL đã tới/stall nhưng " +
-                                  std::to_wstring(kShortcutConfirmMaxAttempts) +
-                                  L"s vẫn không thấy đúng popup Xác nhận");
-            } else {
-                rt.status = L"LIÊN-SERVER • PORTAL SPECIAL đang chờ popup Xác nhận " +
-                            std::to_wstring(rt.shortcutAttempts) + L"/" +
-                            std::to_wstring(kShortcutConfirmMaxAttempts);
-            }
-            return true;
-        }
-
-        if (rt.shortcutPhase == 3) {
-            if (s.mapID == rt.shortcutExpectedMap && s.mapReady && !s.waitingChangeMap) {
-                LogAccount(a, L"LIÊN-SERVER PASS • M10000 → M" + std::to_wstring(rt.shortcutExpectedMap) +
-                              L" • MapReady authoritative • tiếp tục AutoPath tới tọa train.");
-                ResetShortcutRoute(rt);
-                return false;
-            }
-            if (Elapsed(now, rt.shortcutTick, 15000)) {
-                FailShortcutRoute(a, L"popup cổng đã xác nhận nhưng chưa check được MapID+MapReady đích sau 15s");
-            } else {
-                rt.status = L"LIÊN-SERVER • chờ MapID+MapReady M" + std::to_wstring(rt.shortcutExpectedMap);
-            }
-            return true;
-        }
-        return true;
-    }
-
     bool HandleShortcutTravel(Account& a, DWORD now, const TargetProfile& finalTarget) {
         RuntimeState& rt = a.runtime;
         const Snapshot& s = a.snapshot;
-        const bool interserverTarget = finalTarget.mapID == 10005 || finalTarget.mapID == 10004 ||
-                                       finalTarget.mapID == 10007;
-        const bool mandatoryInterserver = (s.mapID == 10000 && interserverTarget) ||
-                                          rt.shortcutKind == ShortcutKind::InterserverGate;
-        if (!shortcutSettings_.enabled && !mandatoryInterserver) {
+        if (!shortcutSettings_.enabled) {
             if (rt.shortcutKind != ShortcutKind::None) ResetShortcutRoute(rt);
             return false;
         }
@@ -10094,11 +9697,7 @@ private:
             const bool currentKunlun = s.mapID == 75 || s.mapID == 76;
             const bool finalKunlun = finalTarget.mapID == 75 || finalTarget.mapID == 76;
             const bool currentFire = s.mapID == 55 || s.mapID == 70;
-            if (s.mapID == 10000 && interserverTarget) {
-                rt.shortcutKind = ShortcutKind::InterserverGate;
-            } else if (!shortcutSettings_.enabled) {
-                return false;
-            } else if (currentKunlun && !finalKunlun) {
+            if (currentKunlun && !finalKunlun) {
                 rt.shortcutKind = ShortcutKind::KunLunExit;
             } else if (IsPrimaryShortcutOriginMap(s.mapID) && finalKunlun) {
                 rt.shortcutKind = ShortcutKind::KunLunEnter;
@@ -10106,18 +9705,6 @@ private:
                 rt.shortcutKind = ShortcutKind::FireEnter;
             } else if (currentFire && finalTarget.mapID != 55 && finalTarget.mapID != 70) {
                 rt.shortcutKind = ShortcutKind::FireExit;
-            } else if (travel_network_logic::SelectReturnExit(s.mapID, finalTarget.mapID).valid) {
-                rt.shortcutKind = ShortcutKind::TravelNetworkExit;
-                rt.shortcutSourceMap = s.mapID;
-            } else if (travel_network_logic::SelectNpcTeleport(s.mapID, finalTarget.mapID).valid) {
-                rt.shortcutKind = ShortcutKind::TravelNetwork;
-                rt.shortcutSourceMap = s.mapID;
-            } else if (IsTravelNetworkCentralSourceMap(s.mapID) &&
-                       travel_network_logic::SelectNpcTeleport(travel_network_logic::kDaiLyMap, finalTarget.mapID).valid) {
-                // 10.6 REV2: central cities first stage to Xa Truyền Chí at Đại Lý M2,
-                // then execute the exact semantic callback pipeline used by the old M5 hub.
-                rt.shortcutKind = ShortcutKind::TravelNetwork;
-                rt.shortcutSourceMap = travel_network_logic::kDaiLyMap;
             } else {
                 return false;
             }
@@ -10162,63 +9749,6 @@ private:
                 if (!reached) return true;
                 LogAccount(a, L"ĐƯỜNG TẮT HỎA PASS • đã tới Thiên Sơn 3073,2338 → tiếp tục AutoPath đích bình thường.");
                 ResetShortcutRoute(rt); return false;
-            }
-            case ShortcutKind::InterserverGate: {
-                int x = 0, y = 0;
-                if (finalTarget.mapID == 10005) { x = shortcutSettings_.thanhLienGateX; y = shortcutSettings_.thanhLienGateY; }
-                else if (finalTarget.mapID == 10004) { x = shortcutSettings_.phamLienGateX; y = shortcutSettings_.phamLienGateY; }
-                else { x = shortcutSettings_.khoVinhGateX; y = shortcutSettings_.khoVinhGateY; }
-                const TargetProfile gate = ShortcutWorldTarget(L"cổng liên-server", 10000, x, y);
-                return HandleShortcutInterserverGate(a, now, finalTarget, gate);
-            }
-            case ShortcutKind::TravelNetworkExit: {
-                const auto plan=travel_network_logic::SelectReturnExit(rt.shortcutSourceMap,rt.shortcutFinalMap);
-                if(!plan.valid){FailShortcutRoute(a,L"10.6 EXIT descriptor không còn hợp lệ");return true;}
-                int x=plan.defaultX,y=plan.defaultY;const std::array<TimedClickPoint,3>* clicks=nullptr;
-                switch(plan.kind){
-                    case travel_network_logic::ExitKind::NamHai:x=shortcutSettings_.namHaiExitX;y=shortcutSettings_.namHaiExitY;clicks=&shortcutSettings_.namHaiExitClicks;break;
-                    case travel_network_logic::ExitKind::MieuCuong:x=shortcutSettings_.mieuCuongExitX;y=shortcutSettings_.mieuCuongExitY;clicks=&shortcutSettings_.mieuCuongExitClicks;break;
-                    case travel_network_logic::ExitKind::HoangLongPhu:x=shortcutSettings_.hoangLongPhuExitX;y=shortcutSettings_.hoangLongPhuExitY;clicks=&shortcutSettings_.hoangLongPhuExitClicks;break;
-                    case travel_network_logic::ExitKind::ThachLam:x=shortcutSettings_.thachLamExitX;y=shortcutSettings_.thachLamExitY;clicks=&shortcutSettings_.thachLamExitClicks;break;
-                    default:break;
-                }
-                if(!clicks||x<=0||y<=0){FailShortcutRoute(a,L"10.6 EXIT tọa world/config không hợp lệ");return true;}
-                const TargetProfile point=ShortcutWorldTarget(plan.label,plan.stagingMap,x,y);
-                return HandleTravelNetworkExit3Click(a,now,finalTarget,plan,point,*clicks);
-            }
-            case ShortcutKind::TravelNetwork: {
-                const auto plan = travel_network_logic::SelectNpcTeleport(rt.shortcutSourceMap, rt.shortcutFinalMap);
-                if (!plan.valid) {
-                    FailShortcutRoute(a, L"travel network mất descriptor hợp lệ cho source/destination đã arm");
-                    return true;
-                }
-
-                TargetProfile npc{};
-                if (plan.useSharedXaTruyenBinhPosition) {
-                    const SellNpcPosition* xaPos = nullptr;
-                    for (std::size_t i = 0; i < kSellNpcs.size(); ++i) {
-                        if (kSellNpcs[i].npcID == travel_network_logic::kXaTruyenBinhNpcId) {
-                            xaPos = &sellNpcPositions_[i];
-                            break;
-                        }
-                    }
-                    if (!xaPos || !xaPos->valid) {
-                        FailShortcutRoute(a, L"descriptor TravelNetwork legacy yêu cầu tọa Xa Truyền Bình nhưng REV2 outbound không còn dùng nguồn này");
-                        return true;
-                    }
-                    npc = ShortcutWorldTarget(L"Xa Truyền Bình", plan.fromMap, xaPos->x, xaPos->y);
-                } else {
-                    npc = ShortcutWorldTarget(plan.label, plan.fromMap, plan.npcX, plan.npcY);
-                }
-
-                const TravelSemantic semantic = ToProtocolTravelSemantic(plan.semantic);
-                if (semantic == TravelSemantic::None) {
-                    FailShortcutRoute(a, L"travel network semantic chưa được ánh xạ • fail-closed");
-                    return true;
-                }
-                return HandleShortcutNpcRoute(a, now, finalTarget, npc, plan.npcID, semantic,
-                                              plan.expectedMap, plan.label, TravelSemantic::None,
-                                              !plan.needConfirm);
             }
             case ShortcutKind::None: return false;
         }
@@ -11524,16 +11054,10 @@ private:
     ShortcutSettings shortcutSettings_ = LoadShortcutSettings();
     SharedPkTlLmSettings sharedPkTlLmSettings_ = LoadSharedPkTlLmSettings();
     HWND shortcutWindow_ = nullptr;
-    HWND travelExitWindow_ = nullptr;
-    std::array<HWND,4> travelExitX_{};
-    std::array<HWND,4> travelExitY_{};
-    std::array<HWND,12> travelExitClickLabels_{};
-    std::array<HWND,12> travelExitTime_{};
-    std::array<HWND,12> travelExitDelay_{};
     HWND shortcutTheme_ = nullptr;
     HWND shortcutSellerCombo_ = nullptr;
     HWND shortcutSellerCoordLabel_ = nullptr;
-    std::array<HWND, 14> shortcutCoordEdits_{};
+    std::array<HWND, 8> shortcutCoordEdits_{};
     std::array<HWND, 3> shortcutClickLabels_{};
     std::array<HWND, 3> shortcutClickTimeEdits_{};
     std::array<HWND, 3> shortcutClickDelayEdits_{};
@@ -11542,8 +11066,6 @@ private:
     HWND shortcutPostTradeDelay_ = nullptr;
     HWND shortcutPostTradeRepeat_ = nullptr;
     int shortcutKunlunCaptureIndex_ = -1;
-    int shortcutTravelExitCaptureGroup_ = -1;
-    int shortcutTravelExitCaptureIndex_ = -1;
     bool shortcutPostTradeCapture_ = false;
     HBRUSH shortcutDarkBrush_ = nullptr;
 
