@@ -43,7 +43,6 @@
 #include "main_macro_sell_logic.h"
 #include "trade_quota_v18_logic.h"
 #include "auto_loot_logic.h"
-#include "pk_tl_lm_logic.h"
 #include "auto_role_logic.h"
 
 using namespace cleanroute;
@@ -67,7 +66,6 @@ constexpr int kCoordinatorStatusY = 934;
 constexpr int kCoordinatorStatusWidth = 1005;
 constexpr int kCoordinatorStatusHeight = 27;
 constexpr int kCompactCoordinatorStatusY = 243;
-constexpr int kTreatmentNpcResId = 339;
 constexpr wchar_t kGameModule[] = L"GameAssembly.dll";
 constexpr UINT_PTR kTimer = 1;
 constexpr UINT_PTR kMainMacroSellTimer = 4;
@@ -317,15 +315,11 @@ constexpr int IDC_SEQ_ACTION = 321;
 constexpr int IDC_SEQ_MIN_TIME = 322;
 constexpr int IDC_SEQ_POST_CLEANUP = 323;
 
-constexpr std::array<const wchar_t*, 13> kClickKeys = {
-    L"Confirm", L"Revive", L"AutoMenu", L"Attack", L"StopAuto2",
-    L"TrainPk", L"Treatment1", L"Treatment2", L"Treatment3", L"Treatment4", L"TrainPk2",
-    L"AlliancePk1", L"AlliancePk2"
+constexpr std::array<const wchar_t*, 5> kClickKeys = {
+    L"Confirm", L"Revive", L"AutoMenu", L"Attack", L"StopAuto2"
 };
-constexpr std::array<const wchar_t*, 13> kClickLabels = {
-    L"XÁC NHẬN RA MAP", L"ĐẦU THAI", L"AUTO", L"ĐÁNH QUÁI", L"DỪNG AUTO 2",
-    L"PK TRAIN 1", L"TRỊ LIỆU 1", L"TRỊ LIỆU 2", L"TRỊ LIỆU 3", L"TRỊ LIỆU 4", L"PK TRAIN 2",
-    L"PK LIÊN MINH 1", L"PK LIÊN MINH 2"
+constexpr std::array<const wchar_t*, 5> kClickLabels = {
+    L"XÁC NHẬN RA MAP", L"ĐẦU THAI", L"AUTO", L"ĐÁNH QUÁI", L"DỪNG AUTO 2"
 };
 
 enum class ClickSlot : int {
@@ -335,14 +329,6 @@ enum class ClickSlot : int {
     AutoMenu = 2, // one saved UI point named AUTO replaces old DỪNG AUTO 1
     Attack = 3,
     StopAuto2 = 4,
-    TrainPk = 5,
-    Treatment1 = 6,
-    Treatment2 = 7,
-    Treatment3 = 8,
-    Treatment4 = 9,
-    TrainPk2 = 10,
-    AlliancePk1 = 11,
-    AlliancePk2 = 12,
 };
 
 enum class PriorityAutoOwner : int {
@@ -479,15 +465,6 @@ struct TargetProfile {
     int y = 0;
     bool valid = false;
 };
-
-struct SharedPkTlLmSettings {
-    TargetProfile treatmentTarget{};
-    std::array<ClickPoint, pk_tl_lm_logic::kSharedPointCount> points{};
-};
-
-int SharedPkTlLmPointIndex(ClickSlot slot) {
-    return pk_tl_lm_logic::SharedPointIndexForClickSlot(static_cast<int>(slot));
-}
 
 struct TelegramSettings {
     bool enabled = false;
@@ -631,17 +608,6 @@ struct RuntimeState {
     DWORD lastTrainPositionCheckTick = 0;
     DWORD lastAutoFightCheckTick = 0;
     int trainRecoveryPhase = 0;
-
-    // T14 compatibility for T15 handlers only: never loaded or enabled by UI/INI.
-    bool retiredTrainPkEnabled = false;
-    bool retiredTreatmentEnabled = false;
-    bool retiredAlliancePkEnabled = false;
-    int trainPkPhase = 0;
-    DWORD trainPkTick = 0;
-    bool trainPkPending = false;
-    int treatmentPhase = 0;
-    DWORD treatmentTick = 0;
-    bool treatmentRoutePending = false;
 
     // Dedicated trade-rendezvous state. AutoFight stopping is no longer duplicated here;
     // every StartPath is protected by the shared v0.3 AutoFight Travel Guard.
@@ -8145,26 +8111,6 @@ private:
                            : L" FAIL • " + error));
     }
 
-    const ClickPoint* ConfiguredPkTlLmPoint(ClickSlot slot) const {
-        const int index = SharedPkTlLmPointIndex(slot);
-        if (index < 0 || index >= static_cast<int>(sharedPkTlLmSettings_.points.size())) return nullptr;
-        return &sharedPkTlLmSettings_.points[static_cast<std::size_t>(index)];
-    }
-
-    bool RunSharedBlindPoint(Account& a, ClickSlot slot, const std::wstring& label) {
-        const ClickPoint* point = ConfiguredPkTlLmPoint(slot);
-        if (!point || !point->valid) {
-            a.runtime.status = label + L" • CHƯA LẤY F8";
-            return false;
-        }
-        std::wstring error;
-        if (!DispatchInternalPointActionDirect(a, *point, label, error, true)) {
-            a.runtime.status = label + L" FAIL • " + error;
-            return false;
-        }
-        return true;
-    }
-
     void StartChecked() {
         if (gatherModeActive_ || partyBuildModeActive_) {
             Log(gatherModeActive_ ? L"TẬP TRUNG đang ON • START auto thường bị chặn; hãy tắt TẬP TRUNG trước." :
@@ -8212,10 +8158,7 @@ private:
             } else {
                 a.tradeHeld = false;
                 a.runtime.routeOwnershipResetPending = true;
-                a.runtime.treatmentRoutePending = a.runtime.retiredTreatmentEnabled;
-                a.runtime.status = a.runtime.retiredTreatmentEnabled
-                    ? L"Đang giám sát • chuẩn hóa ownership AutoPath • chờ NPC trị liệu"
-                    : L"Đang giám sát • chuẩn hóa ownership AutoPath";
+                a.runtime.status = L"Đang giám sát • chuẩn hóa ownership AutoPath";
                 LogAccount(a, L"BẮT ĐẦU CON • bãi " + a.profile.target.name + L" • M" +
                                std::to_wstring(a.profile.target.mapID) + L" • " +
                                std::to_wstring(a.profile.target.x) + L"," + std::to_wstring(a.profile.target.y));
@@ -8570,13 +8513,8 @@ private:
             ResetRuntimeForLifeBoundary(a);
             a.deathSessionLatched = false;
             rt.routeOwnershipResetPending = true;
-            rt.treatmentRoutePending = a.runtime.retiredTreatmentEnabled;
-            rt.status = a.runtime.retiredTreatmentEnabled
-                ? L"ALIVE • cold restart • ưu tiên NPC trị liệu trước khi về bãi"
-                : L"ALIVE • cold restart + chuẩn hóa ownership AutoPath";
-            LogAccount(a, a.runtime.retiredTreatmentEnabled
-                ? L"POST-REVIVE: ResetRuntime • arm NPC trị liệu → 4 click ẩn → AutoPath bãi."
-                : L"POST-REVIVE COLD START: ResetRuntime toàn bộ • giữ nguyên setting/bãi/click • phiên auto mới.");
+            rt.status = L"ALIVE • cold restart + chuẩn hóa ownership AutoPath";
+            LogAccount(a, L"POST-REVIVE COLD START: ResetRuntime toàn bộ • giữ nguyên setting/bãi/click • phiên auto mới.");
             return true;
         }
 
@@ -8675,11 +8613,6 @@ private:
     bool CurrentTravelDestinationMap(const Account& a, int& destinationMap) const {
         const RuntimeState& rt = a.runtime;
 
-        if (rt.treatmentRoutePending && a.runtime.retiredTreatmentEnabled && sharedPkTlLmSettings_.treatmentTarget.valid) {
-            destinationMap = sharedPkTlLmSettings_.treatmentTarget.mapID;
-            return destinationMap > 0;
-        }
-
         if (rt.trainRecoveryPhase != 0) {
             destinationMap = a.profile.target.mapID;
             return destinationMap > 0;
@@ -8723,121 +8656,6 @@ private:
             return true;
         }
         return false;
-    }
-
-    void ArmTrainPkSequence(Account& a, DWORD now, const wchar_t* reason) {
-        RuntimeState& rt = a.runtime;
-        if (!pk_tl_lm_logic::ShouldArmTrainPk(a.runtime.retiredTrainPkEnabled, rt.trainPkPending, rt.trainPkPhase)) return;
-        rt.trainPkPending = true;
-        rt.trainPkPhase = pk_tl_lm_logic::FirstTrainPkPhase(a.runtime.retiredAlliancePkEnabled);
-        rt.trainPkTick = now - 500;
-        LogAccount(a, std::wstring(reason) + (a.runtime.retiredAlliancePkEnabled
-            ? L" • AUTO PK: LM x2 → AUTO→ĐÁNH QUÁI→PK x2."
-            : L" • AUTO PK: AUTO→ĐÁNH QUÁI→PK x2."));
-    }
-
-    bool HandleTrainPkSequence(Account& a, DWORD now) {
-        RuntimeState& rt = a.runtime;
-        if (!a.runtime.retiredTrainPkEnabled) {
-            rt.trainPkPending = false; rt.trainPkPhase = 0; rt.trainPkTick = 0;
-            return false;
-        }
-        if (!rt.trainPkPending && rt.trainPkPhase == 0) return false;
-        if (AutoFightCheckBusy(a, now)) {
-            rt.status = L"AUTO PK • chờ account rảnh (trade/sell/filter/recovery/travel)";
-            return true;
-        }
-        if (!Elapsed(now, rt.trainPkTick, 350)) return true;
-
-        if (rt.trainPkPhase == 3 || rt.trainPkPhase == 4) {
-            if (HandleFightClicks(a, now)) {
-                if ((a.snapshot.validMask & ValidAutoFight) && a.snapshot.autoFight) {
-                    rt.trainPkPhase = 5;
-                    rt.trainPkTick = now;
-                }
-                return true;
-            }
-            return true;
-        }
-
-        ClickSlot slot = ClickSlot::None;
-        const wchar_t* label = L"";
-        if (rt.trainPkPhase == 1) { slot = ClickSlot::AlliancePk1; label = L"PK LM 1/2"; }
-        else if (rt.trainPkPhase == 2) { slot = ClickSlot::AlliancePk2; label = L"PK LM 2/2"; }
-        else if (rt.trainPkPhase == 5) { slot = ClickSlot::TrainPk; label = L"PK TRAIN 1/2"; }
-        else if (rt.trainPkPhase == 6) { slot = ClickSlot::TrainPk2; label = L"PK TRAIN 2/2"; }
-        else { rt.trainPkPending = false; rt.trainPkPhase = 0; return false; }
-
-        if (!RunSharedBlindPoint(a, slot, label)) return true;
-        rt.trainPkTick = now;
-        ++rt.trainPkPhase;
-        if (rt.trainPkPhase == 3) {
-            rt.fightPhase = 0; rt.fightAttempts = 0; rt.fightRetryWaitTick = 0;
-        }
-        if (rt.trainPkPhase > 6) {
-            rt.trainPkPhase = 0; rt.trainPkPending = false;
-            rt.lastAutoFightCheckTick = now;
-            if (!rt.trainPositionMonitorArmed) {
-                rt.trainPositionMonitorArmed = true;
-                rt.lastTrainPositionCheckTick = now;
-            }
-            rt.status = a.runtime.retiredAlliancePkEnabled
-                ? L"PK LM x2→AUTO→ĐÁNH QUÁI→PK x2 xong • tiếp tục train"
-                : L"AUTO→ĐÁNH QUÁI→PK x2 xong • tiếp tục train";
-            LogAccount(a, L"AUTO PK 10.6 PASS • enable riêng acc • tọa PK/LM dùng chung.");
-        }
-        return true;
-    }
-
-    void ResetTreatmentRoute(RuntimeState& rt) {
-        rt.treatmentPhase = 0; rt.treatmentTick = 0; rt.treatmentRoutePending = false;
-    }
-
-    bool HandleTreatmentRoute(Account& a, DWORD now) {
-        RuntimeState& rt = a.runtime;
-        if (!rt.treatmentRoutePending) return false;
-        if (!a.runtime.retiredTreatmentEnabled) { ResetTreatmentRoute(rt); return false; }
-        if (!sharedPkTlLmSettings_.treatmentTarget.valid) {
-            rt.status = L"TRỊ LIỆU bật nhưng CHƯA GÁN NPC • đưa acc tới NPC rồi bấm TL F8";
-            return true;
-        }
-        if (rt.treatmentPhase == 0) {
-            bool arrived = false;
-            (void)HandleRobustTravelDirect(a, now, sharedPkTlLmSettings_.treatmentTarget,
-                                           L"NPC trị liệu", arrived, kPreciseWorldTolerance);
-            if (!arrived) {
-                rt.status = L"TRỊ LIỆU • AutoPath tới NPC M" + std::to_wstring(sharedPkTlLmSettings_.treatmentTarget.mapID) +
-                            L" " + std::to_wstring(sharedPkTlLmSettings_.treatmentTarget.x) + L"," +
-                            std::to_wstring(sharedPkTlLmSettings_.treatmentTarget.y);
-                return true;
-            }
-            rt.treatmentPhase = 1;
-            rt.treatmentTick = now - pk_tl_lm_logic::kTreatmentClickIntervalMs;
-            LogAccount(a, L"TRỊ LIỆU: đã tới NPC • bắt đầu 4 blind hidden click, cách nhau 1 giây.");
-        }
-        if (AutoFightCheckBusy(a, now)) {
-            rt.status = L"TRỊ LIỆU • chờ account rảnh trước click";
-            return true;
-        }
-        if (!Elapsed(now, rt.treatmentTick, pk_tl_lm_logic::kTreatmentClickIntervalMs)) return true;
-        const int pointIndex = static_cast<int>(ClickSlot::Treatment1) + rt.treatmentPhase - 1;
-        if (pointIndex < static_cast<int>(ClickSlot::Treatment1) || pointIndex > static_cast<int>(ClickSlot::Treatment4)) {
-            ResetTreatmentRoute(rt);
-            return false;
-        }
-        const ClickSlot slot = static_cast<ClickSlot>(pointIndex);
-        const std::wstring label = L"TRỊ LIỆU " + std::to_wstring(rt.treatmentPhase) + L"/4";
-        if (!RunSharedBlindPoint(a, slot, label)) return true;
-        rt.treatmentTick = now;
-        ++rt.treatmentPhase;
-        if (rt.treatmentPhase > 4) {
-            ResetTreatmentRoute(rt);
-            ResetRobustTravel(rt);
-            ResetTravelFightGuard(rt);
-            rt.status = L"TRỊ LIỆU x4 xong • AutoPath ra bãi train";
-            LogAccount(a, L"TRỊ LIỆU 10.6 PASS • enable riêng acc • tọa/NPC dùng chung.");
-        }
-        return true;
     }
 
     bool HandleFightClicks(Account& a, DWORD now) {
@@ -9667,8 +9485,7 @@ private:
             rt.fightPhase = 0;
             rt.fightAttempts = 0;
             rt.status = L"Đã về bãi • chuẩn bị bật lại Đánh quái";
-            if (a.runtime.retiredTrainPkEnabled) ArmTrainPkSequence(a, now, L"HỒI BÃI XONG");
-            LogAccount(a, L"Đã quay lại bãi sau check lệch • chuẩn bị AUTO→Đánh quái/PK.");
+            LogAccount(a, L"Đã quay lại bãi sau check lệch • chuẩn bị AUTO→Đánh quái.");
         }
         return true;
     }
@@ -9977,7 +9794,6 @@ private:
                 rt.lastTrainPositionCheckTick = 0;
                 rt.lastAction = Action::Hold;
                 rt.status = L"NONE đã về bãi • tiếp tục AUTO train";
-                if (a.runtime.retiredTrainPkEnabled) ArmTrainPkSequence(a, now, L"VỀ BÃI SAU BÁN");
                 LogAccount(a, L"AUTO BÁN NONE • đã về bãi train • trả quyền cho train FSM.");
                 return false;
             }
@@ -10007,7 +9823,6 @@ private:
         if (rt.travelFightGuardPhase != 0 || rt.travelFightBoostPhase != 0 || rt.shortcutKind != ShortcutKind::None) return true;
         if (rt.tradeTravelPhase != 0 || a.tradeHeld) return true;
         if (rt.sellPhase != 0 || activeMainMacroSellPid_ == a.game.pid) return true;
-        if (rt.treatmentRoutePending || rt.treatmentPhase != 0 || rt.trainPkPending || rt.trainPkPhase != 0) return true;
         if (rt.priorityAutoRequestSlot != ClickSlot::None || rt.priorityAutoPointPhase != 0) return true;
         if (tradeTxn_.phase != TradePhase::Idle &&
             (tradeTxn_.mainPid == a.game.pid || tradeTxn_.childPid == a.game.pid)) return true;
@@ -10140,8 +9955,6 @@ private:
             if (HandleTrainRecovery(a, now)) return;
         }
 
-        if (rt.treatmentRoutePending && HandleTreatmentRoute(a, now)) return;
-
         // Steady train after the ONE initial AutoFight startup. Periodic coordinate and
         // AutoFight 60s checks are intentionally disabled. FILTER V4 is the low-priority
         // background work for enabled CONs; death/full/trade ownership remains above it.
@@ -10163,11 +9976,8 @@ private:
                     return;
                 }
             }
-            if (a.runtime.retiredTrainPkEnabled && (rt.trainPkPending || rt.trainPkPhase != 0)) {
-                if (HandleTrainPkSequence(a, now)) return;
-            }
             if (scanSlot > 0 && image_scan_test::IsChildAutoFilterEnabled(scanSlot))
-                rt.status = L"Train ổn định • SCAN VK nền • PK/TL nhường khi scanner giữ input";
+                rt.status = L"Train ổn định • SCAN VK nền";
             else
                 rt.status = L"Train ổn định • periodic tọa/AutoFight 60s OFF";
             return;
@@ -10212,10 +10022,7 @@ private:
                 LogAccount(a, L"Đã tới bãi và ổn định.");
             }
             rt.wasAtTarget = true;
-            if (a.runtime.retiredTrainPkEnabled) {
-                ArmTrainPkSequence(a, now, L"ĐẾN BÃI TRAIN");
-                if (HandleTrainPkSequence(a, now)) return;
-            } else if (HandleFightClicks(a, now)) return;
+            if (HandleFightClicks(a, now)) return;
             rt.status = L"Đúng bãi • giám sát tọa độ";
             return;
         }
@@ -10910,8 +10717,6 @@ private:
 
     // Global shortcut router/settings. It is opt-in and does not alter unrelated direct routes when disabled.
     ShortcutSettings shortcutSettings_ = LoadShortcutSettings();
-    // T14: inert runtime-only PK/TL/LM placeholder until T15; no persisted configuration.
-    SharedPkTlLmSettings sharedPkTlLmSettings_{};
     HWND shortcutWindow_ = nullptr;
     HWND shortcutTheme_ = nullptr;
     HWND shortcutSellerCombo_ = nullptr;
