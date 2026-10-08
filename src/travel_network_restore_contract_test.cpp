@@ -64,7 +64,7 @@ int main() {
                 !SelectReturnExit(85, 86).valid, "no exit to non-central target");
     ok &= check(!SelectNpcTeleport(2, 10005).valid &&
                 !SelectNpcTeleport(2, 10014).valid &&
-                !SelectReturnExit(85, 10014).valid, "THDC/interserver explicitly excluded");
+                !SelectReturnExit(85, 10014).valid, "removed world-route modes explicitly excluded");
     ok &= check(!SelectNpcTeleport(2, 75).valid &&
                 !SelectNpcTeleport(2, 55).valid, "Côn Lôn/Fire remain separate paths");
     if (!ok) return 1;
