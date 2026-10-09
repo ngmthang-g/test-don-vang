@@ -36,7 +36,8 @@ constexpr int IDC_CLIENT_LIST = 100, IDC_SCAN = 101, IDC_START_CHECKED = 102,
     IDC_SAVE_TIMING = 3208, IDC_REPEAT = 3209,
     IDC_DELAY_TARGET = 3210, IDC_DELAY_CLICK1 = 3211,
     IDC_DELAY_TRADE = 3212, IDC_DELAY_CLICK2 = 3213,
-    IDC_DELAY_CYCLE = 3214, IDC_LOG_TOGGLE = 3215;
+    IDC_DELAY_CYCLE = 3214, IDC_LOG_TOGGLE = 3215,
+    IDC_TEST_CLICK1 = 3216, IDC_TEST_CLICK2 = 3217;
 struct GameClient { DWORD pid=0; DWORD threadId=0; HWND window=nullptr; std::wstring title; };
 template <typename T> bool ResolveProc(HMODULE module, const char* name, T& out) {
     out = nullptr;
@@ -450,7 +451,7 @@ class App {
 public:
     HWND hwnd_=nullptr, accountsView_=nullptr, nearbyView_=nullptr, tabs_=nullptr, log_=nullptr;
     HWND lblSelection_=nullptr, lblClick1_=nullptr, lblClick2_=nullptr, help_=nullptr;
-    HWND scanButton_=nullptr, capture1_=nullptr, capture2_=nullptr, saveTiming_=nullptr, logToggle_=nullptr;
+    HWND scanButton_=nullptr, capture1_=nullptr, capture2_=nullptr, test1_=nullptr, test2_=nullptr, saveTiming_=nullptr, logToggle_=nullptr;
     HWND repeatEdit_=nullptr, delayTargetEdit_=nullptr, delayClick1Edit_=nullptr;
     HWND delayTradeEdit_=nullptr, delayClick2Edit_=nullptr, delayCycleEdit_=nullptr;
     std::vector<HWND> autoControls_{};
@@ -513,10 +514,12 @@ public:
         const wchar_t* ncols[]={L"Tên nhân vật xung quanh",L"RoleID"};
         const int nwidths[]={650,320};
         for(int i=0;i<2;++i){LVCOLUMNW col{};col.mask=LVCF_TEXT|LVCF_WIDTH;col.pszText=const_cast<LPWSTR>(ncols[i]);col.cx=nwidths[i];ListView_InsertColumn(nearbyView_,i,&col);}
-        capture1_=Control(L"BUTTON",L"GÁN CLICK 1 (F7)",BS_PUSHBUTTON,14,319,192,19,IDC_CAPTURE_CLICK1);
-        capture2_=Control(L"BUTTON",L"GÁN CLICK 2 (F8)",BS_PUSHBUTTON,214,319,192,19,IDC_CAPTURE_CLICK2);
-        lblClick1_=Control(L"STATIC",L"Click 1: chưa gán (F7)",0,418,316,608,15,IDC_CLICK1_LABEL);
-        lblClick2_=Control(L"STATIC",L"Click 2: chưa gán (F8)",0,418,333,608,15,IDC_CLICK2_LABEL);
+        capture1_=Control(L"BUTTON",L"CHỌN CLICK 1 → F7",BS_PUSHBUTTON,14,319,178,19,IDC_CAPTURE_CLICK1);
+        test1_=Control(L"BUTTON",L"TEST CLICK 1",BS_PUSHBUTTON,198,319,121,19,IDC_TEST_CLICK1);
+        capture2_=Control(L"BUTTON",L"CHỌN CLICK 2 → F8",BS_PUSHBUTTON,325,319,178,19,IDC_CAPTURE_CLICK2);
+        test2_=Control(L"BUTTON",L"TEST CLICK 2",BS_PUSHBUTTON,509,319,121,19,IDC_TEST_CLICK2);
+        lblClick1_=Control(L"STATIC",L"C1: chưa gán",0,640,319,182,15,IDC_CLICK1_LABEL);
+        lblClick2_=Control(L"STATIC",L"C2: chưa gán",0,828,319,198,15,IDC_CLICK2_LABEL);
         auto makeSetting=[&](const wchar_t* label,HWND& edit,int x,int y,int id) {
             HWND title=Control(L"STATIC",label,0,x,y+2,194,15,-1);
             edit=Control(L"EDIT",L"",WS_BORDER|ES_NUMBER|ES_AUTOHSCROLL|WS_TABSTOP,x+195,y,85,19,id);
@@ -544,7 +547,7 @@ public:
     void SwitchTab(int i) {
         selectedTab_=i;
         const bool autoTab=i==0;
-        for(HWND c:{lblSelection_,scanButton_,capture1_,capture2_,lblClick1_,lblClick2_,nearbyView_,help_,saveTiming_})
+        for(HWND c:{lblSelection_,scanButton_,capture1_,capture2_,test1_,test2_,lblClick1_,lblClick2_,nearbyView_,help_,saveTiming_})
             ShowWindow(c,autoTab?SW_SHOW:SW_HIDE);
         for(HWND c:autoControls_)ShowWindow(c,autoTab?SW_SHOW:SW_HIDE);
         ShowWindow(log_,autoTab?SW_HIDE:SW_SHOW);
@@ -621,7 +624,7 @@ public:
         ListView_DeleteAllItems(nearbyView_);
         if(!a) {
             SetWindowTextW(lblSelection_,L"Chưa chọn ACC");
-            SetWindowTextW(lblClick1_,L"Click 1: —");SetWindowTextW(lblClick2_,L"Click 2: —");
+            SetWindowTextW(lblClick1_,L"C1: —");SetWindowTextW(lblClick2_,L"C2: —");
             for(HWND h:{repeatEdit_,delayTargetEdit_,delayClick1Edit_,delayTradeEdit_,delayClick2Edit_,delayCycleEdit_})SetWindowTextW(h,L"");
             updatingNearby_=false;return;
         }
@@ -635,8 +638,8 @@ public:
         }
         const auto selection=L"ACC: "+name+L"   |   PID "+std::to_wstring(a->game.pid)+L"   |   RoleID được tick: "+(target>0?std::to_wstring(target):L"chưa chọn");
         SetWindowTextW(lblSelection_,selection.c_str());
-        const auto label1=(x1>=0&&y1>=0)?L"Click 1: "+std::to_wstring(x1)+L", "+std::to_wstring(y1)+L" / 10000":L"Click 1: chưa gán (F7)";
-        const auto label2=(x2>=0&&y2>=0)?L"Click 2: "+std::to_wstring(x2)+L", "+std::to_wstring(y2)+L" / 10000":L"Click 2: chưa gán (F8)";
+        const auto label1=(x1>=0&&y1>=0)?L"C1: "+std::to_wstring(x1)+L","+std::to_wstring(y1):L"C1: chưa gán";
+        const auto label2=(x2>=0&&y2>=0)?L"C2: "+std::to_wstring(x2)+L","+std::to_wstring(y2):L"C2: chưa gán";
         SetWindowTextW(lblClick1_,label1.c_str());SetWindowTextW(lblClick2_,label2.c_str());
         auto setNumber=[](HWND ctrl,int number) {const auto value=std::to_wstring(number);SetWindowTextW(ctrl,value.c_str());};
         setNumber(repeatEdit_,settings.repeatCycles);
@@ -787,6 +790,25 @@ public:
         PushLog(a->game.pid,L"F7/F8 PASS: Đã lưu Click "+std::to_wstring(point)+L" normalized "+std::to_wstring(nx)+L","+std::to_wstring(ny));
         RefreshNearby();
     }
+    void TestHiddenClick(int which) {
+        Account* a=Selected();if(!a)return;
+        int x=-1,y=-1;
+        {std::lock_guard<std::mutex> lock(a->data);
+            if(which==1){x=a->click1X;y=a->click1Y;}
+            else{x=a->click2X;y=a->click2Y;}
+        }
+        Response response{};std::wstring error;bool ok=false;
+        if(x<0||x>=10000||y<0||y>=10000)error=L"Chưa gán điểm CLICK bằng F7/F8";
+        else {
+            std::lock_guard<std::mutex> lock(a->io);
+            if(!a->bridge.AttachedTo(a->game.pid))ok=a->bridge.Attach(a->game,error);
+            else ok=true;
+            if(ok)ok=a->bridge.Call(Command::ClickInternalPoint,x,y,0,response,error,2200);
+        }
+        std::wstring msg=L"TEST CLICK "+std::to_wstring(which)+(ok?L" PASS | ":L" FAIL | ")+
+            (ok?std::wstring(response.detail):error)+L" | norm="+std::to_wstring(x)+L","+std::to_wstring(y);
+        SetStatus(*a,msg);PushLog(a->game.pid,msg);RefreshAccounts();
+    }
     void SaveTiming() {
         Account* a=Selected();if(!a)return;
         target_loop::Settings values;
@@ -876,6 +898,8 @@ public:
                     case IDC_NEARBY_REFRESH:ScanNearby();return 0;
                     case IDC_CAPTURE_CLICK1:ArmClick(1);return 0;
                     case IDC_CAPTURE_CLICK2:ArmClick(2);return 0;
+                    case IDC_TEST_CLICK1:TestHiddenClick(1);return 0;
+                    case IDC_TEST_CLICK2:TestHiddenClick(2);return 0;
                     case IDC_SAVE_TIMING:SaveTiming();return 0;
                     case IDC_LOG_TOGGLE:ToggleLog();return 0;
                     case IDC_CLEAR_LOG:SetWindowTextW(log_,L"");return 0;
