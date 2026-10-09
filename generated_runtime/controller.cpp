@@ -655,17 +655,18 @@ public:
             updatingNearby_=false;return;
         }
         std::vector<NearbyEntry> players;
-        std::wstring name;int target,own,x1,y1,x2,y2;
+        std::wstring name;int target,own;
+        SavedClickPoint p1,p2;
         target_loop::Settings settings;
         {
             std::lock_guard<std::mutex> lock(a->data);
             players=a->nearby;name=a->displayName;target=a->targetRoleID;own=a->selfRoleID;
-            x1=a->click1X;y1=a->click1Y;x2=a->click2X;y2=a->click2Y;settings=a->timing;
+            p1=a->click1;p2=a->click2;settings=a->timing;
         }
         const auto selection=L"ACC: "+name+L"   |   PID "+std::to_wstring(a->game.pid)+L"   |   RoleID được tick: "+(target>0?std::to_wstring(target):L"chưa chọn");
         SetWindowTextW(lblSelection_,selection.c_str());
-        const auto label1=(x1>=0&&y1>=0)?L"C1: "+std::to_wstring(x1)+L","+std::to_wstring(y1):L"C1: chưa gán";
-        const auto label2=(x2>=0&&y2>=0)?L"C2: "+std::to_wstring(x2)+L","+std::to_wstring(y2):L"C2: chưa gán";
+        const auto label1=p1.Valid()?L"C1: "+std::to_wstring(p1.x)+L","+std::to_wstring(p1.y)+L"@"+std::to_wstring(p1.baseW):L"C1: chưa gán";
+        const auto label2=p2.Valid()?L"C2: "+std::to_wstring(p2.x)+L","+std::to_wstring(p2.y)+L"@"+std::to_wstring(p2.baseW):L"C2: chưa gán";
         SetWindowTextW(lblClick1_,label1.c_str());SetWindowTextW(lblClick2_,label2.c_str());
         auto setNumber=[](HWND ctrl,int number) {const auto value=std::to_wstring(number);SetWindowTextW(ctrl,value.c_str());};
         setNumber(repeatEdit_,settings.repeatCycles);
@@ -710,10 +711,11 @@ public:
                     if(a->selfRoleID!=state.snapshot.roleID) {
                         a->selfRoleID=state.snapshot.roleID;
                         a->targetRoleID=ReadIni(a->selfRoleID,L"TargetRoleID",0);
-                        a->click1X=ReadIni(a->selfRoleID,L"Click1X",-1);
-                        a->click1Y=ReadIni(a->selfRoleID,L"Click1Y",-1);
-                        a->click2X=ReadIni(a->selfRoleID,L"Click2X",-1);
-                        a->click2Y=ReadIni(a->selfRoleID,L"Click2Y",-1);
+                        // Old normalized coordinates are automatically migrated with base 10000.
+                        a->click1={ReadIni(a->selfRoleID,L"Click1X",-1),ReadIni(a->selfRoleID,L"Click1Y",-1),
+                                   ReadIni(a->selfRoleID,L"Click1W",10000),ReadIni(a->selfRoleID,L"Click1H",10000)};
+                        a->click2={ReadIni(a->selfRoleID,L"Click2X",-1),ReadIni(a->selfRoleID,L"Click2Y",-1),
+                                   ReadIni(a->selfRoleID,L"Click2W",10000),ReadIni(a->selfRoleID,L"Click2H",10000)};
                         auto& t=a->timing;
                         t.repeatCycles=ReadIni(a->selfRoleID,L"RepeatCycles",t.repeatCycles);
                         t.delayTargetMs=ReadIni(a->selfRoleID,L"DelayTargetMs",t.delayTargetMs);
@@ -796,43 +798,47 @@ public:
     void CaptureClick(int point) {
         Account* a=Get(armedPid_);if(!a)return;
         POINT p{};RECT rc{};
-        if(!GetCursorPos(&p)||!ScreenToClient(a->game.window,&p)||!GetClientRect(a->game.window,&rc)||
-            rc.right<=0||rc.bottom<=0||p.x<0||p.y<0||p.x>=rc.right||p.y>=rc.bottom){
-            PushLog(a->game.pid,(point==1?L"F7: ":L"F8: ")+std::wstring(L"chuột chưa ở trong cửa sổ game cần cấu hình"));return;
+        if(!GetCursorPos(&p)||!IsWindow(a->game.window)||!ScreenToClient(a->game.window,&p)||
+           !GetClientRect(a->game.window,&rc)||rc.right<=0||rc.bottom<=0||
+           p.x<0||p.y<0||p.x>=rc.right||p.y>=rc.bottom){
+            PushLog(a->game.pid,L"F7/F8: chuột chưa ở client GAME đúng ACC; đang chờ gán");
+            SetStatus(*a,L"CHỜ F7/F8: chuột chưa nằm trong game đúng ACC");
+            return;
         }
-        int nx=static_cast<int>(static_cast<long long>(p.x)*kScale/rc.right);
-        int ny=static_cast<int>(static_cast<long long>(p.y)*kScale/rc.bottom);
-        int self;
+        const SavedClickPoint captured{p.x,p.y,rc.right,rc.bottom};
+        int self=0;
         {std::lock_guard<std::mutex> lock(a->data);
-            if(point==1){a->click1X=nx;a->click1Y=ny;}
-            else {a->click2X=nx;a->click2Y=ny;}
+            if(point==1)a->click1=captured;else a->click2=captured;
             self=a->selfRoleID;
         }
-        if(self>0){
-            WriteIni(self,point==1?L"Click1X":L"Click2X",nx);
-            WriteIni(self,point==1?L"Click1Y":L"Click2Y",ny);
-        }
         armedClick_=0;armedPid_=0;
-        PushLog(a->game.pid,L"F7/F8 PASS: Đã lưu Click "+std::to_wstring(point)+L" normalized "+std::to_wstring(nx)+L","+std::to_wstring(ny));
-        RefreshNearby();
+        if(self>0){
+            const std::wstring base=point==1?L"Click1":L"Click2";
+            WriteIni(self,(base+L"X").c_str(),captured.x);
+            WriteIni(self,(base+L"Y").c_str(),captured.y);
+            WriteIni(self,(base+L"W").c_str(),captured.baseW);
+            WriteIni(self,(base+L"H").c_str(),captured.baseH);
+        }
+        const auto msg=L"F7/F8 PASS: Click "+std::to_wstring(point)+L"="+
+            std::to_wstring(captured.x)+L","+std::to_wstring(captured.y)+
+            L" @ "+std::to_wstring(captured.baseW)+L"x"+std::to_wstring(captured.baseH);
+        PushLog(a->game.pid,msg);SetStatus(*a,msg);RefreshNearby();
     }
     void TestHiddenClick(int which) {
         Account* a=Selected();if(!a)return;
-        int x=-1,y=-1;
+        SavedClickPoint saved{};
         {std::lock_guard<std::mutex> lock(a->data);
-            if(which==1){x=a->click1X;y=a->click1Y;}
-            else{x=a->click2X;y=a->click2Y;}
+            saved=which==1?a->click1:a->click2;
         }
-        Response response{};std::wstring error;bool ok=false;
-        if(x<0||x>=10000||y<0||y>=10000)error=L"Chưa gán điểm CLICK bằng F7/F8";
-        else {
-            std::lock_guard<std::mutex> lock(a->io);
+        Response response{};std::wstring error;bool ok=false;int nx=-1,ny=-1;
+        {std::lock_guard<std::mutex> lock(a->io);
             if(!a->bridge.AttachedTo(a->game.pid))ok=a->bridge.Attach(a->game,error);
             else ok=true;
-            if(ok)ok=a->bridge.Call(Command::ClickInternalPoint,x,y,0,response,error,2200);
+            if(ok)ok=DispatchHiddenClick(*a,saved,response,error,nx,ny);
         }
-        std::wstring msg=L"TEST CLICK "+std::to_wstring(which)+(ok?L" PASS | ":L" FAIL | ")+
-            (ok?std::wstring(response.detail):error)+L" | norm="+std::to_wstring(x)+L","+std::to_wstring(y);
+        auto msg=L"TEST CLICK "+std::to_wstring(which)+(ok?L" PASS | ":L" FAIL | ")+
+            (ok?std::wstring(response.detail):error);
+        if(nx>=0&&ny>=0)msg+=L" | norm="+std::to_wstring(nx)+L","+std::to_wstring(ny);
         SetStatus(*a,msg);PushLog(a->game.pid,msg);RefreshAccounts();
     }
     void SaveTiming() {
