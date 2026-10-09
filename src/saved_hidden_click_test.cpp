@@ -1,4 +1,7 @@
 #include "saved_hidden_click.h"
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 int main() {
     using namespace saved_hidden_click;
