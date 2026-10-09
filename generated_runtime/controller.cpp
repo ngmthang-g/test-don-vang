@@ -407,18 +407,18 @@ void Worker(Account* account) {
             if(ok) {
                 switch(step) {
                     case target_loop::Step::Target:
-                        ok=account->bridge.Call(Command::SelectTargetByRoleID,target,1,0,response,error,850);
+                        ok=account->bridge.Call(Command::SelectTargetByRoleID,target,1,0,response,error,2200);
                         break;
                     case target_loop::Step::Face:
                         if(clickX<0 || clickY<0) { error=L"Chưa gán Click 1 bằng F7"; ok=false; }
-                        else ok=account->bridge.Call(Command::ClickInternalPoint,clickX,clickY,0,response,error,850);
+                        else ok=account->bridge.Call(Command::ClickInternalPoint,clickX,clickY,0,response,error,2200);
                         break;
                     case target_loop::Step::Trade:
-                        ok=account->bridge.Call(Command::ClickTravelSemantic,static_cast<int>(TravelSemantic::Trade),0,0,response,error,850);
+                        ok=account->bridge.Call(Command::ClickTravelSemantic,static_cast<int>(TravelSemantic::Trade),0,0,response,error,2200);
                         break;
                     case target_loop::Step::Click2:
                         if(clickX<0 || clickY<0){ error=L"Chưa lấy Click 2 bằng F8"; ok=false; }
-                        else ok=account->bridge.Call(Command::ClickInternalPoint,clickX,clickY,0,response,error,850);
+                        else ok=account->bridge.Call(Command::ClickInternalPoint,clickX,clickY,0,response,error,2200);
                         break;
                 }
             }
