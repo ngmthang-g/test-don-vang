@@ -459,6 +459,9 @@ public:
     DWORD selectedPid_=0;
     bool updatingAccounts_=false, updatingNearby_=false;
     int selectedTab_=0;
+    int armedClick_=0; DWORD armedPid_=0;
+    bool wasF7_=false,wasF8_=false;
+    DWORD lastUiRefresh_=0;
     void Font(HWND control){if(control && font_)SendMessageW(control,WM_SETFONT,reinterpret_cast<WPARAM>(font_),TRUE);}
     HWND Control(const wchar_t* clazz,const wchar_t* text,DWORD style,int x,int y,int w,int h,int id,HWND parent=nullptr) {
         HWND c=CreateWindowExW(0,clazz,text,WS_CHILD|WS_VISIBLE|style,x,y,w,h,parent?parent:hwnd_,
@@ -527,15 +530,14 @@ public:
         makeSetting(L"Delay sau Click 2 (ms)",delayClick2Edit_,360,371,IDC_DELAY_CLICK2);
         makeSetting(L"Delay giữa chuỗi (ms)",delayCycleEdit_,706,371,IDC_DELAY_CYCLE);
         saveTiming_=Control(L"BUTTON",L"LƯU REPEAT / DELAY CHO ACC",BS_PUSHBUTTON,14,394,300,19,IDC_SAVE_TIMING);
-        help_=Control(L"STATIC",L"F7/F8: đặt chuột tại điểm cần click trong game rồi bấm phím. Mỗi ACC lưu riêng tọa độ, số chuỗi và delay. Lỗi bước vẫn sang bước tiếp theo.",0,
+        help_=Control(L"STATIC",L"CHỌN CLICK trên tool trước, đặt chuột vào đúng game và nhấn F7/F8. TEST CLICK để chẩn đoán.",0,
                       14,416,1012,15,IDC_HELP_TEXT);
         log_=Control(L"EDIT",L"",ES_MULTILINE|ES_READONLY|ES_AUTOVSCROLL|WS_VSCROLL|WS_BORDER,14,190,1012,200,IDC_LOG);
         Control(L"BUTTON",L"XÓA LOG",BS_PUSHBUTTON,14,394,140,19,IDC_CLEAR_LOG);
         Control(L"BUTTON",L"XUẤT LOG",BS_PUSHBUTTON,166,394,140,19,IDC_EXPORT_LOG);
         SwitchTab(0);
-        if(!RegisterHotKey(hwnd_,1,MOD_NOREPEAT,VK_F8))PushLog(0,L"Không đăng ký được F8 (đang được ứng dụng khác dùng)");
-        if(!RegisterHotKey(hwnd_,2,MOD_NOREPEAT,VK_F7))PushLog(0,L"Không đăng ký được F7 (đang được ứng dụng khác dùng)");
-        SetTimer(hwnd_,kTimer,500,nullptr);
+        // Same as source 10.6: arm and poll while cursor is in game; no global hotkeys.
+        SetTimer(hwnd_,kTimer,30,nullptr);
         ScanClients();
         PushLog(0,L"Đã khởi tạo quản lý ACC và tab LOG; bỏ toàn bộ workflow cũ");
     }
@@ -746,8 +748,24 @@ public:
         }
         RefreshAccounts();
     }
+    void ArmClick(int point) {
+        Account* a=Selected();if(!a){PushLog(0,L"Chưa chọn ACC để gán CLICK");return;}
+        armedClick_=point;armedPid_=a->game.pid;
+        wasF7_=(GetAsyncKeyState(VK_F7)&0x8000)!=0;
+        wasF8_=(GetAsyncKeyState(VK_F8)&0x8000)!=0;
+        std::wstring msg=L"CHỜ F"+std::to_wstring(point==1?7:8)+L" | PID "+
+            std::to_wstring(armedPid_)+L" | đặt chuột trong GAME rồi bấm phím";
+        SetStatus(*a,msg);PushLog(a->game.pid,msg);
+    }
+    void PollCaptureHotkeys() {
+        const bool f7=(GetAsyncKeyState(VK_F7)&0x8000)!=0;
+        const bool f8=(GetAsyncKeyState(VK_F8)&0x8000)!=0;
+        if(armedClick_==1&&f7&&!wasF7_)CaptureClick(1);
+        if(armedClick_==2&&f8&&!wasF8_)CaptureClick(2);
+        wasF7_=f7;wasF8_=f8;
+    }
     void CaptureClick(int point) {
-        Account* a=Selected();if(!a)return;
+        Account* a=Get(armedPid_);if(!a)return;
         POINT p{};RECT rc{};
         if(!GetCursorPos(&p)||!ScreenToClient(a->game.window,&p)||!GetClientRect(a->game.window,&rc)||
             rc.right<=0||rc.bottom<=0||p.x<0||p.y<0||p.x>=rc.right||p.y>=rc.bottom){
@@ -765,7 +783,8 @@ public:
             WriteIni(self,point==1?L"Click1X":L"Click2X",nx);
             WriteIni(self,point==1?L"Click1Y":L"Click2Y",ny);
         }
-        PushLog(a->game.pid,L"Đã lưu Click "+std::to_wstring(point)+L" normalized "+std::to_wstring(nx)+L","+std::to_wstring(ny));
+        armedClick_=0;armedPid_=0;
+        PushLog(a->game.pid,L"F7/F8 PASS: Đã lưu Click "+std::to_wstring(point)+L" normalized "+std::to_wstring(nx)+L","+std::to_wstring(ny));
         RefreshNearby();
     }
     void SaveTiming() {
@@ -848,10 +867,6 @@ public:
     LRESULT Handle(UINT msg,WPARAM wp,LPARAM lp){
         switch(msg){
             case WM_CREATE:Init();return 0;
-            case WM_HOTKEY:
-                if(wp==1)CaptureClick(2);
-                if(wp==2)CaptureClick(1);
-                return 0;
             case WM_NOTIFY:ListNotification(reinterpret_cast<NMHDR*>(lp));return 0;
             case WM_COMMAND:
                 switch(LOWORD(wp)){
@@ -859,17 +874,21 @@ public:
                     case IDC_START_CHECKED:StartChecked(true);return 0;
                     case IDC_STOP_CHECKED:StartChecked(false);return 0;
                     case IDC_NEARBY_REFRESH:ScanNearby();return 0;
-                    case IDC_CAPTURE_CLICK1:CaptureClick(1);return 0;
-                    case IDC_CAPTURE_CLICK2:CaptureClick(2);return 0;
+                    case IDC_CAPTURE_CLICK1:ArmClick(1);return 0;
+                    case IDC_CAPTURE_CLICK2:ArmClick(2);return 0;
                     case IDC_SAVE_TIMING:SaveTiming();return 0;
                     case IDC_LOG_TOGGLE:ToggleLog();return 0;
                     case IDC_CLEAR_LOG:SetWindowTextW(log_,L"");return 0;
                     case IDC_EXPORT_LOG:ExportLog();return 0;
                 }break;
-            case WM_TIMER:if(wp==kTimer){FlushLog();RefreshAccounts();}return 0;
+            case WM_TIMER:if(wp==kTimer){
+                PollCaptureHotkeys();
+                const DWORD now=GetTickCount();
+                if(now-lastUiRefresh_>=500){FlushLog();RefreshAccounts();lastUiRefresh_=now;}
+            }return 0;
             case WM_CLOSE:DestroyWindow(hwnd_);return 0;
             case WM_DESTROY:
-                KillTimer(hwnd_,kTimer);UnregisterHotKey(hwnd_,1);UnregisterHotKey(hwnd_,2);
+                KillTimer(hwnd_,kTimer);
                 for(auto& a:accounts_)a->running=false;
                 for(auto& a:accounts_)if(a->worker.joinable())a->worker.join();
                 accounts_.clear();
