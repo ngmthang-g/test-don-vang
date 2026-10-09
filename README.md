@@ -1,12 +1,49 @@
-# Test Đơn Vàng — Auto Target ID (EXE build branch)
-This branch only hosts the approved source ZIP and a Windows x64 GitHub Actions build workflow; `main` is untouched.
+# Test Đơn Vàng — Auto Target ID (phát triển từ bản 10.6)
 
-**Source archive:** `source/TestDonVang_TargetID_SOURCE_APPROVED.zip` (extracts to `TestDonVang_TargetID/`).
+- Vẫn dùng trình quản lý nhiều ACC Windows, tự nhận client đang nạp `GameAssembly.dll`, Bridge theo từng PID, cấu hình riêng từng nhân vật, hai lệnh **BẮT ĐẦU/DỪNG ACC TICK** và tab **LOG**.
+- Trong **AUTO TARGET ID**, chọn ACC rồi **QUÉT NGƯỜI XUNG QUANH**. Danh sách checkbox nhận `RoleID` và tên từ `ObjectManager.sprites` (chuyển từ Auto Buff v1.3.1, bỏ lọc Peace). Mỗi ACC tick **đúng một** RoleID; nhiều ACC có thể tick chung một RoleID. Chọn RoleID được lưu theo RoleID của chính ACC vào `%LOCALAPPDATA%\ThanLongCleanRoute\target_id_accounts.ini`, kể cả khi nhân vật được tick rời tầm quét.
+- Click 1: Bridge xác minh `Game.get_SelectedTarget` bằng RoleID, tìm portrait target bằng UI control/RectTransform và click tại tọa độ suy ra từ Unity geometry. **Không click tọa độ đoán mò**; thất bại sẽ ghi Log rồi tiếp tục chu kỳ.
+- Click 2: chọn ACC, đưa chuột vào vị trí mong muốn ở cửa sổ game rồi nhấn **F8** để lưu tọa độ cho ACC đó.
+- Trình tự worker của mỗi ACC: `SelectTargetByRoleID → ClickTargetFace → ClickTravelSemantic(Trade) → ClickInternalPoint(Click2) → lặp`. Lỗi/timeout của từng bước không chặn vòng kế, và không gửi chồng yêu cầu Bridge cho cùng PID.
+- Giữ nguyên license launcher/API gate từ Test Đơn Vàng gốc. Các workflow train, lọc vũ khí, dồn đồ, MAIN/CON, Telegram, developer và tab giới thiệu đã được bỏ khỏi GUI và build.
 
-**Build:** GitHub Actions → **Build Target ID EXE** → latest successful run → download artifact `TestDonVang-TargetID-Windows-x64`.
+## Build
 
-Output is both `TestDonVang_TargetID.exe` and `ThanLongCleanRouteBridge.dll`. Put them side by side. The executable also uses the original licensing launcher.
+Yêu cầu Windows x64 + Visual Studio 2022 + CMake 3.24+.
 
-**Scope:** each game account retains discovery/management and Log tab; independent scan/tick of nearby target RoleID; target, portrait click, trade callback, click 2, loop. Multiple accounts may share one target RoleID. Legacy auto-train and equipment filtering modes have been removed from the approved source.
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Release --parallel
+ctest --test-dir build -C Release --output-on-failure
+```
 
-**Verification status:** workflow compiles and runs automated logic tests. Real game memory layout, portrait UI, and target click behavior still require manual Windows/game validation. This build branch is not merged to `main`.
+Đặt `TestDonVang_TargetID.exe` và `ThanLongCleanRouteBridge.dll` **cạnh nhau**. GitHub Actions job `build-target-id.yml` xuất cả hai file.
+
+## Thận trọng
+
+Chưa có kiểm thử thực tế trên game Windows. Scan RVA dựa trên chữ ký phiên bản đã kiểm tra trong source Auto Buff 1.3.1; game khác bản sẽ từ chối scan thay vì đọc sai. Tên portrait/RectTransform còn cần đối chiếu UI của bản game đang chạy. **Không coi một build pass là đã được nghiệm thu in-game.**
+
+## Đưa source lên nhánh GitHub riêng để lấy EXE
+
+Do môi trường tạo bản nguồn không thể kết nối trực tiếp GitHub để đẩy ZIP lên nhánh,
+source đã được đóng gói riêng. Giải nén ZIP; trên máy có Git và quyền ghi repository,
+mở PowerShell tại thư mục `TestDonVang_TargetID` rồi chạy:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\publish-to-branch.ps1
+```
+
+Script **chỉ** cập nhật `exe/target-id-loop`, không động vào `main`.
+Sau đó mở [Actions](https://github.com/ngmthang-g/test-don-vang/actions) để lấy artifact
+chứa `TestDonVang_TargetID.exe` và `ThanLongCleanRouteBridge.dll` nếu build pass.
+Chưa chạy được Windows CI hoặc kiểm tra trên game thật trong môi trường phát triển này.
+
+## Điều khiển Click 1 / Click 2, số chuỗi và delay riêng từng ACC
+
+- Mở ACC, bấm **QUÉT NGƯỜI XUNG QUANH**, tick một RoleID. Nhiều ACC được tick cùng RoleID.
+- **Click 1**: đặt con trỏ chuột vào tọa độ *mặt nhân vật* mong muốn trong cửa sổ game của ACC đang chọn, rồi nhấn **F7**. Không tự dò vị trí mặt.
+- **Click 2**: đặt chuột tại điểm thứ hai trong game, nhấn **F8**. Cả hai điểm là tọa độ tương đối theo client window (0..9999), lưu riêng theo RoleID ACC.
+- **Số chuỗi**: 0 = vô hạn; N = chạy đủ N chuỗi rồi tự dừng.
+- Delay sau Target, Click 1, Callback Giao dịch, Click 2 và **delay giữa chuỗi** có thể đặt riêng, đơn vị ms (0..60000). Delay của mỗi bước áp dụng cả khi bước đó báo lỗi; sau Click 2 cộng thêm delay giữa chuỗi.
+- Bấm **LƯU REPEAT / DELAY CHO ACC** để lưu. Các thay đổi không ảnh hưởng ACC khác. Lưu ở `target_id_accounts.ini` theo RoleID của ACC.
+- Nếu chưa gán tọa độ click, bước click báo lỗi trong tab LOG rồi chuyển sang bước kế.
