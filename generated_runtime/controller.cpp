@@ -315,6 +315,26 @@ private:
 
 
 struct NearbyEntry { int roleID=0; std::wstring name; };
+// Same as v10.6: capture client pixels together with the reference client size.
+struct SavedClickPoint {
+    int x=-1,y=-1,baseW=0,baseH=0;
+    bool Valid() const {return x>=0&&y>=0&&baseW>0&&baseH>0&&x<baseW&&y<baseH;}
+};
+bool NormalizeSavedClick(HWND window,const SavedClickPoint& p,int& nx,int& ny,std::wstring& error) {
+    nx=ny=-1;
+    if(!p.Valid()){error=L"CLICK ẨN: chưa gán tọa độ";return false;}
+    if(!IsWindow(window)){error=L"CLICK ẨN: cửa sổ game đã đóng";return false;}
+    RECT rc{};
+    if(!GetClientRect(window,&rc)||rc.right<=0||rc.bottom<=0){error=L"CLICK ẨN: không lấy được client size";return false;}
+    // 10.6 scales stored point by current base size BEFORE normalizing.
+    int x=MulDiv(p.x,rc.right,p.baseW);
+    int y=MulDiv(p.y,rc.bottom,p.baseH);
+    if(x<0||y<0||x>=rc.right||y>=rc.bottom){error=L"CLICK ẨN: tọa sau scale nằm ngoài game";return false;}
+    nx=static_cast<int>(static_cast<long long>(x)*10000/rc.right);
+    ny=static_cast<int>(static_cast<long long>(y)*10000/rc.bottom);
+    return nx>=0&&nx<10000&&ny>=0&&ny<10000;
+}
+
 struct Account {
     GameClient game{};
     BridgeClient bridge{};
@@ -324,10 +344,8 @@ struct Account {
     std::thread worker{};
     int selfRoleID = 0;
     int targetRoleID = 0;
-    int click1X = -1;                   // user-assigned normalized client coordinate 0..9999
-    int click1Y = -1;
-    int click2X = -1;
-    int click2Y = -1;
+    SavedClickPoint click1{};
+    SavedClickPoint click2{};
     target_loop::Settings timing{};
     std::vector<NearbyEntry> nearby{};
     target_loop::State loop{};
@@ -338,6 +356,13 @@ struct Account {
     ~Account() { running=false; if(worker.joinable()) worker.join(); }
 };
 constexpr int kScale=10000;
+// Exactly one InputSync click route for both worker and TEST, same as 10.6.
+// Called under the per-PID Bridge mutex.
+bool DispatchHiddenClick(Account& a,const SavedClickPoint& point,
+                         Response& response,std::wstring& error,int& nx,int& ny) {
+    if(!NormalizeSavedClick(a.game.window,point,nx,ny,error))return false;
+    return a.bridge.Call(Command::ClickInternalPoint,nx,ny,0,response,error,2200);
+}
 void InterruptibleDelay(const std::atomic<bool>& running, int milliseconds) {
     while (milliseconds>0 && running.load()) {
         const int fragment=std::min(milliseconds,50);
@@ -383,7 +408,8 @@ void Worker(Account* account) {
     PushLog(account->game.pid,L"Khởi động vòng độc lập");
     bool completed=false;
     while (account->running.load()) {
-        int target=0, clickX=-1, clickY=-1;
+        int target=0;
+        SavedClickPoint clickPoint{};
         target_loop::Step step;
         target_loop::Settings settings;
         {
@@ -392,14 +418,14 @@ void Worker(Account* account) {
             step=account->loop.step;
             settings=account->timing;
             if (step==target_loop::Step::Face) {
-                clickX=account->click1X;clickY=account->click1Y;
+                clickPoint=account->click1;
             } else if (step==target_loop::Step::Click2) {
-                clickX=account->click2X;clickY=account->click2Y;
+                clickPoint=account->click2;
             }
         }
         if(target<=0){ SetStatus(*account,L"Chưa tick RoleID trong Scan người xung quanh"); InterruptibleDelay(account->running,400); continue; }
         Response response{}; std::wstring error;
-        bool ok=false;
+        bool ok=false;int nx=-1,ny=-1;
         {
             std::lock_guard<std::mutex> lock(account->io);
             if (!account->bridge.AttachedTo(account->game.pid))
@@ -411,20 +437,20 @@ void Worker(Account* account) {
                         ok=account->bridge.Call(Command::SelectTargetByRoleID,target,1,0,response,error,2200);
                         break;
                     case target_loop::Step::Face:
-                        if(clickX<0 || clickY<0) { error=L"Chưa gán Click 1 bằng F7"; ok=false; }
-                        else ok=account->bridge.Call(Command::ClickInternalPoint,clickX,clickY,0,response,error,2200);
+                        ok=DispatchHiddenClick(*account,clickPoint,response,error,nx,ny);
                         break;
                     case target_loop::Step::Trade:
                         ok=account->bridge.Call(Command::ClickTravelSemantic,static_cast<int>(TravelSemantic::Trade),0,0,response,error,2200);
                         break;
                     case target_loop::Step::Click2:
-                        if(clickX<0 || clickY<0){ error=L"Chưa lấy Click 2 bằng F8"; ok=false; }
-                        else ok=account->bridge.Call(Command::ClickInternalPoint,clickX,clickY,0,response,error,2200);
+                        ok=DispatchHiddenClick(*account,clickPoint,response,error,nx,ny);
                         break;
                 }
             }
         }
-        ReportStep(*account,step,ok,ok ? std::wstring(response.detail) : error);
+        std::wstring info=ok?std::wstring(response.detail):error;
+        if(nx>=0&&ny>=0)info+=L" | norm="+std::to_wstring(nx)+L","+std::to_wstring(ny);
+        ReportStep(*account,step,ok,info);
         // Every step gets its own delay. A completed chain additionally gets cycle delay.
         // After a finite repeat count, stop without starting one extra chain.
         if (step==target_loop::Step::Click2) {
