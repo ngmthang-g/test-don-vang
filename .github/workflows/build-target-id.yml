@@ -17,6 +17,13 @@ jobs:
         run: |
           Expand-Archive -Path "source/TestDonVang_TargetID_SOURCE_APPROVED.zip" -DestinationPath "unpacked" -Force
           if (-not (Test-Path "unpacked/TestDonVang_TargetID/CMakeLists.txt")) { throw "Missing project in archive" }
+      - name: Restore exact 10.6 coordinate normalizer and F8 regression tests
+        shell: pwsh
+        run: |
+          $project = "unpacked/TestDonVang_TargetID"
+          Copy-Item "src/saved_hidden_click.h" "$project/src/saved_hidden_click.h" -Force
+          Copy-Item "src/saved_hidden_click_test.cpp" "$project/src/saved_hidden_click_test.cpp" -Force
+          if (-not (Select-String -Path "$project/src/saved_hidden_click.h" -Pattern "fixed_slot_sell_logic::NormalizeClientCoordinate" -SimpleMatch)) { throw "Wrong 10.6 coordinate scale" }
       - name: Verify requested feature scope
         working-directory: unpacked/TestDonVang_TargetID
         run: python scripts/verify_scope.py
