@@ -36,7 +36,7 @@ constexpr int IDC_CLIENT_LIST = 100, IDC_SCAN = 101, IDC_START_CHECKED = 102,
     IDC_SAVE_TIMING = 3208, IDC_REPEAT = 3209,
     IDC_DELAY_TARGET = 3210, IDC_DELAY_CLICK1 = 3211,
     IDC_DELAY_TRADE = 3212, IDC_DELAY_CLICK2 = 3213,
-    IDC_DELAY_CYCLE = 3214;
+    IDC_DELAY_CYCLE = 3214, IDC_LOG_TOGGLE = 3215;
 struct GameClient { DWORD pid=0; DWORD threadId=0; HWND window=nullptr; std::wstring title; };
 template <typename T> bool ResolveProc(HMODULE module, const char* name, T& out) {
     out = nullptr;
@@ -346,11 +346,14 @@ void InterruptibleDelay(const std::atomic<bool>& running, int milliseconds) {
 }
 std::mutex g_logMutex;
 std::deque<std::wstring> g_pendingLogs;
+// Global ON/OFF switch controls log collection, not account automation.
+std::atomic<bool> g_logEnabled{true};
 void PushLog(DWORD pid,const std::wstring& text) {
     SYSTEMTIME t{}; GetLocalTime(&t);
     wchar_t stamp[60]{};
     swprintf_s(stamp,L"[%02u:%02u:%02u | PID %lu] ",t.wHour,t.wMinute,t.wSecond,static_cast<unsigned long>(pid));
     std::lock_guard<std::mutex> lock(g_logMutex);
+    if (!g_logEnabled.load(std::memory_order_relaxed)) return;
     g_pendingLogs.push_back(std::wstring(stamp)+text);
     if (g_pendingLogs.size()>1000) g_pendingLogs.pop_front();
 }
@@ -447,7 +450,7 @@ class App {
 public:
     HWND hwnd_=nullptr, accountsView_=nullptr, nearbyView_=nullptr, tabs_=nullptr, log_=nullptr;
     HWND lblSelection_=nullptr, lblClick1_=nullptr, lblClick2_=nullptr, help_=nullptr;
-    HWND scanButton_=nullptr, capture1_=nullptr, capture2_=nullptr, saveTiming_=nullptr;
+    HWND scanButton_=nullptr, capture1_=nullptr, capture2_=nullptr, saveTiming_=nullptr, logToggle_=nullptr;
     HWND repeatEdit_=nullptr, delayTargetEdit_=nullptr, delayClick1Edit_=nullptr;
     HWND delayTradeEdit_=nullptr, delayClick2Edit_=nullptr, delayCycleEdit_=nullptr;
     std::vector<HWND> autoControls_{};
@@ -467,51 +470,68 @@ public:
         return nullptr;
     }
     Account* Selected(){return Get(selectedPid_);}
+    void SetLogToggleCaption() {
+        if (logToggle_) SetWindowTextW(logToggle_,g_logEnabled.load()?L"LOG: ON":L"LOG: OFF");
+    }
+    void ToggleLog() {
+        const bool on=!g_logEnabled.load();
+        if (!on) PushLog(0,L"LOG OFF — ngừng ghi dòng mới (giữ log đã có)");
+        g_logEnabled.store(on);
+        WritePrivateProfileStringW(L"Interface",L"LogEnabled",on?L"1":L"0",ConfigPath().c_str());
+        SetLogToggleCaption();
+        if (on) PushLog(0,L"LOG ON — tiếp tục ghi log");
+    }
     void Init() {
         INITCOMMONCONTROLSEX icc{sizeof(icc),ICC_LISTVIEW_CLASSES|ICC_TAB_CLASSES};InitCommonControlsEx(&icc);
-        LOGFONTW lf{};lf.lfHeight=-16;wcscpy_s(lf.lfFaceName,L"Segoe UI");
+        // Condense vertical sizing by approximately half; retain original 1060px window width.
+        // Keep text at 13px for legibility rather than physically scaling glyphs to 8px.
+        LOGFONTW lf{};lf.lfHeight=-13;wcscpy_s(lf.lfFaceName,L"Segoe UI");
         font_=CreateFontIndirectW(&lf);
-        Control(L"STATIC",L"DANH SÁCH ACC — Tick ACC rồi Bắt đầu / Dừng",0,14,8,740,23,-1);
-        accountsView_=Control(WC_LISTVIEWW,L"",LVS_REPORT|LVS_SINGLESEL|LVS_SHOWSELALWAYS|WS_BORDER,14,35,1012,250,IDC_CLIENT_LIST);
+        g_logEnabled.store(GetPrivateProfileIntW(L"Interface",L"LogEnabled",1,ConfigPath().c_str())!=0);
+        Control(L"STATIC",L"DANH SÁCH ACC — Tick ACC rồi Bắt đầu / Dừng",0,14,5,740,15,-1);
+        accountsView_=Control(WC_LISTVIEWW,L"",LVS_REPORT|LVS_SINGLESEL|LVS_SHOWSELALWAYS|WS_BORDER,14,22,1012,110,IDC_CLIENT_LIST);
         ListView_SetExtendedListViewStyle(accountsView_,LVS_EX_FULLROWSELECT|LVS_EX_GRIDLINES|LVS_EX_CHECKBOXES|LVS_EX_DOUBLEBUFFER);
         const wchar_t* cols[]={L"Tên nhân vật / Client",L"PID",L"RoleID ACC",L"RoleID mục tiêu",L"Trạng thái"};
         const int widths[]={320,95,130,145,280};
         for(int i=0;i<5;++i){LVCOLUMNW col{};col.mask=LVCF_TEXT|LVCF_WIDTH;col.pszText=const_cast<LPWSTR>(cols[i]);col.cx=widths[i];ListView_InsertColumn(accountsView_,i,&col);}
-        Control(L"BUTTON",L"QUÉT CLIENT",BS_PUSHBUTTON,14,294,153,32,IDC_SCAN);
-        Control(L"BUTTON",L"BẮT ĐẦU ACC TICK",BS_PUSHBUTTON,178,294,182,32,IDC_START_CHECKED);
-        Control(L"BUTTON",L"DỪNG ACC TICK",BS_PUSHBUTTON,370,294,168,32,IDC_STOP_CHECKED);
-        tabs_=Control(WC_TABCONTROLW,L"",WS_CLIPSIBLINGS|TCS_FIXEDWIDTH,14,343,1012,36,IDC_MAIN_TAB);
+        Control(L"BUTTON",L"QUÉT CLIENT",BS_PUSHBUTTON,14,137,153,19,IDC_SCAN);
+        Control(L"BUTTON",L"BẮT ĐẦU ACC TICK",BS_PUSHBUTTON,178,137,182,19,IDC_START_CHECKED);
+        Control(L"BUTTON",L"DỪNG ACC TICK",BS_PUSHBUTTON,370,137,168,19,IDC_STOP_CHECKED);
+        // Global toggle is visible on both tabs. It only switches log collection.
+        logToggle_=Control(L"BUTTON",L"LOG: ON",BS_PUSHBUTTON,550,137,140,19,IDC_LOG_TOGGLE);
+        SetLogToggleCaption();
+        tabs_=Control(WC_TABCONTROLW,L"",WS_CLIPSIBLINGS|TCS_FIXEDWIDTH,14,160,1012,26,IDC_MAIN_TAB);
         TCITEMW tab{}; tab.mask=TCIF_TEXT;tab.pszText=const_cast<LPWSTR>(L"AUTO TARGET ID");TabCtrl_InsertItem(tabs_,0,&tab);
         tab.pszText=const_cast<LPWSTR>(L"LOG");TabCtrl_InsertItem(tabs_,1,&tab);
-        lblSelection_=Control(L"STATIC",L"Chọn một ACC để quét người xung quanh",0,14,399,880,25,IDC_SELECTION);
-        scanButton_=Control(L"BUTTON",L"QUÉT NGƯỜI XUNG QUANH",BS_PUSHBUTTON,14,430,245,32,IDC_NEARBY_REFRESH);
-        nearbyView_=Control(WC_LISTVIEWW,L"",LVS_REPORT|LVS_SINGLESEL|WS_BORDER,14,470,1012,170,IDC_NEARBY_LIST);
+        lblSelection_=Control(L"STATIC",L"Chọn một ACC để quét người xung quanh",0,14,190,880,14,IDC_SELECTION);
+        scanButton_=Control(L"BUTTON",L"QUÉT NGƯỜI XUNG QUANH",BS_PUSHBUTTON,14,207,245,20,IDC_NEARBY_REFRESH);
+        nearbyView_=Control(WC_LISTVIEWW,L"",LVS_REPORT|LVS_SINGLESEL|WS_BORDER,14,230,1012,85,IDC_NEARBY_LIST);
         ListView_SetExtendedListViewStyle(nearbyView_,LVS_EX_FULLROWSELECT|LVS_EX_GRIDLINES|LVS_EX_CHECKBOXES|LVS_EX_DOUBLEBUFFER);
         const wchar_t* ncols[]={L"Tên nhân vật xung quanh",L"RoleID"};
         const int nwidths[]={650,320};
         for(int i=0;i<2;++i){LVCOLUMNW col{};col.mask=LVCF_TEXT|LVCF_WIDTH;col.pszText=const_cast<LPWSTR>(ncols[i]);col.cx=nwidths[i];ListView_InsertColumn(nearbyView_,i,&col);}
-        capture1_=Control(L"BUTTON",L"GÁN CLICK 1 (F7)",BS_PUSHBUTTON,14,649,192,30,IDC_CAPTURE_CLICK1);
-        capture2_=Control(L"BUTTON",L"GÁN CLICK 2 (F8)",BS_PUSHBUTTON,214,649,192,30,IDC_CAPTURE_CLICK2);
-        lblClick1_=Control(L"STATIC",L"Click 1: chưa gán (F7)",0,418,647,608,22,IDC_CLICK1_LABEL);
-        lblClick2_=Control(L"STATIC",L"Click 2: chưa gán (F8)",0,418,672,608,22,IDC_CLICK2_LABEL);
+        capture1_=Control(L"BUTTON",L"GÁN CLICK 1 (F7)",BS_PUSHBUTTON,14,319,192,19,IDC_CAPTURE_CLICK1);
+        capture2_=Control(L"BUTTON",L"GÁN CLICK 2 (F8)",BS_PUSHBUTTON,214,319,192,19,IDC_CAPTURE_CLICK2);
+        lblClick1_=Control(L"STATIC",L"Click 1: chưa gán (F7)",0,418,316,608,15,IDC_CLICK1_LABEL);
+        lblClick2_=Control(L"STATIC",L"Click 2: chưa gán (F8)",0,418,333,608,15,IDC_CLICK2_LABEL);
         auto makeSetting=[&](const wchar_t* label,HWND& edit,int x,int y,int id) {
-            HWND title=Control(L"STATIC",label,0,x,y+5,194,22,-1);
-            edit=Control(L"EDIT",L"",WS_BORDER|ES_NUMBER|ES_AUTOHSCROLL|WS_TABSTOP,x+195,y,85,27,id);
+            HWND title=Control(L"STATIC",label,0,x,y+2,194,15,-1);
+            edit=Control(L"EDIT",L"",WS_BORDER|ES_NUMBER|ES_AUTOHSCROLL|WS_TABSTOP,x+195,y,85,19,id);
             autoControls_.push_back(title);
             autoControls_.push_back(edit);
         };
-        makeSetting(L"Số chuỗi (0 = vô hạn)",repeatEdit_,14,708,IDC_REPEAT);
-        makeSetting(L"Delay sau Target (ms)",delayTargetEdit_,360,708,IDC_DELAY_TARGET);
-        makeSetting(L"Delay sau Click 1 (ms)",delayClick1Edit_,706,708,IDC_DELAY_CLICK1);
-        makeSetting(L"Delay sau Callback (ms)",delayTradeEdit_,14,749,IDC_DELAY_TRADE);
-        makeSetting(L"Delay sau Click 2 (ms)",delayClick2Edit_,360,749,IDC_DELAY_CLICK2);
-        makeSetting(L"Delay giữa chuỗi (ms)",delayCycleEdit_,706,749,IDC_DELAY_CYCLE);
-        saveTiming_=Control(L"BUTTON",L"LƯU REPEAT / DELAY CHO ACC",BS_PUSHBUTTON,14,792,300,32,IDC_SAVE_TIMING);
+        makeSetting(L"Số chuỗi (0 = vô hạn)",repeatEdit_,14,348,IDC_REPEAT);
+        makeSetting(L"Delay sau Target (ms)",delayTargetEdit_,360,348,IDC_DELAY_TARGET);
+        makeSetting(L"Delay sau Click 1 (ms)",delayClick1Edit_,706,348,IDC_DELAY_CLICK1);
+        makeSetting(L"Delay sau Callback (ms)",delayTradeEdit_,14,371,IDC_DELAY_TRADE);
+        makeSetting(L"Delay sau Click 2 (ms)",delayClick2Edit_,360,371,IDC_DELAY_CLICK2);
+        makeSetting(L"Delay giữa chuỗi (ms)",delayCycleEdit_,706,371,IDC_DELAY_CYCLE);
+        saveTiming_=Control(L"BUTTON",L"LƯU REPEAT / DELAY CHO ACC",BS_PUSHBUTTON,14,394,300,19,IDC_SAVE_TIMING);
         help_=Control(L"STATIC",L"F7/F8: đặt chuột tại điểm cần click trong game rồi bấm phím. Mỗi ACC lưu riêng tọa độ, số chuỗi và delay. Lỗi bước vẫn sang bước tiếp theo.",0,
-                      14,838,1012,33,IDC_HELP_TEXT);
-        log_=Control(L"EDIT",L"",ES_MULTILINE|ES_READONLY|ES_AUTOVSCROLL|WS_VSCROLL|WS_BORDER,14,395,1012,430,IDC_LOG);
-        Control(L"BUTTON",L"XÓA LOG",BS_PUSHBUTTON,14,835,140,32,IDC_CLEAR_LOG);
-        Control(L"BUTTON",L"XUẤT LOG",BS_PUSHBUTTON,166,835,140,32,IDC_EXPORT_LOG);
+                      14,416,1012,15,IDC_HELP_TEXT);
+        log_=Control(L"EDIT",L"",ES_MULTILINE|ES_READONLY|ES_AUTOVSCROLL|WS_VSCROLL|WS_BORDER,14,190,1012,200,IDC_LOG);
+        Control(L"BUTTON",L"XÓA LOG",BS_PUSHBUTTON,14,394,140,19,IDC_CLEAR_LOG);
+        Control(L"BUTTON",L"XUẤT LOG",BS_PUSHBUTTON,166,394,140,19,IDC_EXPORT_LOG);
         SwitchTab(0);
         if(!RegisterHotKey(hwnd_,1,MOD_NOREPEAT,VK_F8))PushLog(0,L"Không đăng ký được F8 (đang được ứng dụng khác dùng)");
         if(!RegisterHotKey(hwnd_,2,MOD_NOREPEAT,VK_F7))PushLog(0,L"Không đăng ký được F7 (đang được ứng dụng khác dùng)");
@@ -842,6 +862,7 @@ public:
                     case IDC_CAPTURE_CLICK1:CaptureClick(1);return 0;
                     case IDC_CAPTURE_CLICK2:CaptureClick(2);return 0;
                     case IDC_SAVE_TIMING:SaveTiming();return 0;
+                    case IDC_LOG_TOGGLE:ToggleLog();return 0;
                     case IDC_CLEAR_LOG:SetWindowTextW(log_,L"");return 0;
                     case IDC_EXPORT_LOG:ExportLog();return 0;
                 }break;
@@ -878,7 +899,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int show){
     if(!RegisterClassExW(&wc))return 1;
     App app;
     HWND hwnd=CreateWindowExW(0,wc.lpszClassName,kTitle,WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,
-        CW_USEDEFAULT,CW_USEDEFAULT,1060,935,nullptr,nullptr,instance,&app);
+        CW_USEDEFAULT,CW_USEDEFAULT,1060,475,nullptr,nullptr,instance,&app);
     if(!hwnd)return 2;
     ShowWindow(hwnd,show);UpdateWindow(hwnd);
     MSG msg{};
