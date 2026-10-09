@@ -17,15 +17,6 @@ jobs:
         run: |
           Expand-Archive -Path "source/TestDonVang_TargetID_SOURCE_APPROVED.zip" -DestinationPath "unpacked" -Force
           if (-not (Test-Path "unpacked/TestDonVang_TargetID/CMakeLists.txt")) { throw "Missing project in archive" }
-      - name: Overlay updated ACC click and timing sources
-        shell: pwsh
-        run: |
-          $project = "unpacked/TestDonVang_TargetID"
-          Copy-Item "generated_runtime/controller.cpp" "$project/generated_runtime/controller.cpp" -Force
-          Copy-Item "src/target_loop_logic.h" "$project/src/target_loop_logic.h" -Force
-          Copy-Item "src/target_loop_logic_test.cpp" "$project/src/target_loop_logic_test.cpp" -Force
-          Copy-Item "scripts/verify_scope.py" "$project/scripts/verify_scope.py" -Force
-          Copy-Item "README.md" "$project/README.md" -Force
       - name: Verify requested feature scope
         working-directory: unpacked/TestDonVang_TargetID
         run: python scripts/verify_scope.py
